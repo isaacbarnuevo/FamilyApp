@@ -125,7 +125,8 @@ const INTEGRANTES_PREDEFINIDOS = [
   { nombre: 'Nieves', rol: 'Hijos', padres: ['Ana', 'Javier'], padrinos: [], santo: '5 Agosto', email: null, fechaNacimiento: '2012-01-25' },
   { nombre: 'Miriam', rol: 'Hijos', padres: ['Ana', 'Javier'], padrinos: [], santo: '12 de Septiembre', email: null, fechaNacimiento: '2014-11-19' },
   { nombre: 'Jaime (Hijo)', rol: 'Hijos', padres: ['Ana', 'Javier'], padrinos: [], santo: '25 de Julio', email: null, fechaNacimiento: '2013-07-04' },
-  { nombre: 'Francisco', rol: 'Hijos', padres: ['Ana', 'Javier'], padrinos: [], santo: '4 de Octubre (San Francisco de Asís)', email: null, fechaNacimiento: '2016-12-01' }
+  { nombre: 'Francisco', rol: 'Hijos', padres: ['Ana', 'Javier'], padrinos: [], santo: '4 de Octubre (San Francisco de Asís)', email: null, fechaNacimiento: '2016-12-01' },
+  { nombre: 'Tía Mariuge', rol: 'Tíos/Familiares', santo: 'No especificado', email: null }
 ];
 
 const CUMPLEANOS_PREDEFINIDOS = [
@@ -809,6 +810,8 @@ export default function App() {
   const [editingTrasladoId, setEditingTrasladoId] = useState(null);
   const [filtroTraslado, setFiltroTraslado] = useState('todos');
   const [notifyTelegramOnTraslado, setNotifyTelegramOnTraslado] = useState(true);
+  const [customConductorMode, setCustomConductorMode] = useState(false);
+  const [customAcompananteMode, setCustomAcompananteMode] = useState(false);
   const [newTraslado, setNewTraslado] = useState({
     origen: 'Madrid',
     destino: 'Alcalá (Esgaravita)',
@@ -2765,22 +2768,22 @@ export default function App() {
     setShowCitaModal(false);
     setIsEditingCita(false);
     setEditingCitaId(null);
+    setCustomAcompananteMode(false);
   };
 
   const handleSaveCita = async (e) => {
     e.preventDefault();
     if (!newCita.paciente || !newCita.especialidad || !newCita.fecha || !newCita.centro) {
-      triggerToast('Completa paciente, especialidad, centro y fecha.');
+      triggerToast('Completa paciente, especialidad, fecha y centro médico.');
       return;
     }
 
-    const mapUrl = newCita.ubicacionUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(newCita.centro)}`;
     const citaData = {
       paciente: newCita.paciente,
       especialidad: newCita.especialidad,
       medico: newCita.medico || '',
       centro: newCita.centro,
-      ubicacionUrl: mapUrl,
+      ubicacionUrl: newCita.ubicacionUrl || '',
       fecha: newCita.fecha,
       hora: newCita.hora || '10:00',
       acompanante: newCita.acompanante || 'Pendiente de asignar',
@@ -2804,22 +2807,25 @@ export default function App() {
         }
 
         if (notifyTelegramOnCita) {
-          const accionTxt = isEditingCita ? 'actualizada' : 'registrada';
-          const msgTg = `🏥 <b>Cita Médica ${accionTxt} para ${citaData.paciente}</b>\n\n` +
+          const accionTxt = isEditingCita ? 'actualizada' : 'programada';
+          const sinAcompanante = !citaData.acompanante || citaData.acompanante === 'Pendiente de asignar';
+          const emojiAlerta = sinAcompanante ? '⚠️' : '🏥';
+          const msgTg = `${emojiAlerta} <b>Cita Médica ${accionTxt}</b>\n\n` +
+            `👤 <b>Paciente:</b> ${citaData.paciente}\n` +
             `🩺 <b>Especialidad:</b> ${citaData.especialidad}\n` +
             (citaData.medico ? `👨‍⚕️ <b>Doctor/a:</b> ${citaData.medico}\n` : '') +
-            `📅 <b>Fecha y hora:</b> ${formatearFechaStr(citaData.fecha)} a las ${citaData.hora}\n` +
-            `📍 <b>Centro:</b> ${citaData.centro}\n` +
-            `🚗 <b>Acompañante:</b> ${citaData.acompanante && citaData.acompanante !== 'Pendiente de asignar' ? citaData.acompanante : '⚠️ ¡Pendiente de asignar!'}\n` +
+            `🏥 <b>Centro:</b> ${citaData.centro}\n` +
+            `📅 <b>Fecha:</b> ${formatearFechaStr(citaData.fecha)} a las ${citaData.hora}\n` +
+            `🚗 <b>Acompañante:</b> ${sinAcompanante ? '⚠️ <b>¡Pendiente de asignar! ¿Quién le acompaña?</b>' : citaData.acompanante}\n` +
             (citaData.notas ? `📋 <b>Notas:</b> <i>${citaData.notas}</i>\n` : '') +
-            `\n👉 <a href="https://familiabarnuevoapp.web.app">Ver Citas Médicas en la App</a>`;
+            `\n👉 <a href="https://familiabarnuevoapp.web.app">Abrir App para ofrecerse o ver detalles</a>`;
           enviarMensajeTelegram(msgTg);
         }
 
         resetCitaForm();
       } catch (err) {
         console.error(err);
-        triggerToast(`Error al guardar cita médica: ${err.message || 'Permiso denegado'}`);
+        triggerToast(`Error al guardar cita: ${err.message || 'Permiso denegado'}`);
       }
     } else {
       if (isEditingCita) {
@@ -2853,6 +2859,8 @@ export default function App() {
     });
     setEditingCitaId(cita.id);
     setIsEditingCita(true);
+    const esConocido = !cita.acompanante || cita.acompanante === 'Pendiente de asignar' || integrantes.some(i => i.nombre === cita.acompanante);
+    setCustomAcompananteMode(!esConocido);
     setShowCitaModal(true);
   };
 
@@ -2962,6 +2970,7 @@ export default function App() {
     setShowTrasladoModal(false);
     setIsEditingTraslado(false);
     setEditingTrasladoId(null);
+    setCustomConductorMode(false);
   };
 
   const handleSaveTraslado = async (e) => {
@@ -3045,6 +3054,8 @@ export default function App() {
     });
     setEditingTrasladoId(traslado.id);
     setIsEditingTraslado(true);
+    const esConocido = !traslado.conductor || traslado.conductor === 'Pendiente de asignar' || integrantes.some(i => i.nombre === traslado.conductor);
+    setCustomConductorMode(!esConocido);
     setShowTrasladoModal(true);
   };
 
@@ -6653,6 +6664,7 @@ export default function App() {
                       <option value="Hijos">Hijo/a (Sobrino/a de la familia)</option>
                       <option value="Padres">Padre/Madre directo (Mamá o Papá)</option>
                       <option value="Abuelos">Abuelo/a (Padres de Mamá o Papá)</option>
+                      <option value="Tíos/Familiares">Tío/a u Otro Familiar (Tía Mariuge, primos, etc.)</option>
                     </select>
                   </div>
 
@@ -6899,6 +6911,7 @@ export default function App() {
                       <option value="Hijos">Hijo/a (Sobrino/a de la familia)</option>
                       <option value="Padres">Padre/Madre directo (Mamá o Papá)</option>
                       <option value="Abuelos">Abuelo/a (Padres de Mamá o Papá)</option>
+                      <option value="Tíos/Familiares">Tío/a u Otro Familiar (Tía Mariuge, primos, etc.)</option>
                     </select>
                   </div>
 
@@ -7481,41 +7494,111 @@ export default function App() {
                       <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                         ¿Quién le acompaña? (Acompañante)
                       </label>
-                      {usuarioActivo && (
+                      <div className="flex items-center gap-2">
+                        {usuarioActivo && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCustomAcompananteMode(false);
+                              setNewCita({ ...newCita, acompanante: usuarioActivo });
+                            }}
+                            className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 hover:underline"
+                          >
+                            🚗 Yo ({usuarioActivo})
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => setNewCita({ ...newCita, acompanante: usuarioActivo })}
-                          className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 hover:underline"
+                          onClick={() => {
+                            const next = !customAcompananteMode;
+                            setCustomAcompananteMode(next);
+                            if (next && (newCita.acompanante === 'Pendiente de asignar' || integrantes.some(i => i.nombre === newCita.acompanante))) {
+                              setNewCita({ ...newCita, acompanante: '' });
+                            } else if (!next && !newCita.acompanante) {
+                              setNewCita({ ...newCita, acompanante: 'Pendiente de asignar' });
+                            }
+                          }}
+                          className="text-[10px] font-bold text-rose-600 hover:text-rose-700 hover:underline"
                         >
-                          🚗 Yo ({usuarioActivo})
+                          {customAcompananteMode ? '👥 Lista de familia' : '✏️ Otro / Externa'}
                         </button>
-                      )}
+                      </div>
                     </div>
-                    <select
-                      value={newCita.acompanante}
-                      onChange={(e) => setNewCita({ ...newCita, acompanante: e.target.value })}
-                      className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 text-slate-700 font-medium outline-none focus:ring-2 focus:ring-rose-400"
-                    >
-                      <option value="Pendiente de asignar">⚠️ Pendiente de asignar</option>
-                      <optgroup label="Hermanos">
-                        {integrantes
-                          .filter(m => m.rol === 'Hermanos' || esHermano(m.nombre))
-                          .map(m => (
-                            <option key={m.id || m.nombre} value={m.nombre}>
-                              🚗 {m.nombre}
-                            </option>
-                          ))}
-                      </optgroup>
-                      <optgroup label="Otros Familiares">
-                        {integrantes
-                          .filter(m => m.rol !== 'Hermanos' && !esHermano(m.nombre))
-                          .map(m => (
-                            <option key={m.id || m.nombre} value={m.nombre}>
-                              👤 {m.nombre}
-                            </option>
-                          ))}
-                      </optgroup>
-                    </select>
+
+                    {customAcompananteMode ? (
+                      <div className="space-y-1.5">
+                        <input
+                          type="text"
+                          placeholder="Nombre del acompañante (ej: Tía Mariuge, Vecino, Taxi...)"
+                          className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 font-medium outline-none focus:ring-2 focus:ring-rose-400"
+                          value={newCita.acompanante === 'Pendiente de asignar' ? '' : newCita.acompanante}
+                          onChange={(e) => setNewCita({ ...newCita, acompanante: e.target.value })}
+                        />
+                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                          <span className="text-[10px] text-slate-400 font-medium">Sugerencias:</span>
+                          <button
+                            type="button"
+                            onClick={() => setNewCita({ ...newCita, acompanante: 'Tía Mariuge' })}
+                            className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full border border-amber-200 font-semibold"
+                          >
+                            + Tía Mariuge
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewCita({ ...newCita, acompanante: 'Taxi / Sanitario' })}
+                            className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full border border-slate-200 font-medium"
+                          >
+                            + Taxi / Sanitario
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <select
+                          value={newCita.acompanante}
+                          onChange={(e) => {
+                            if (e.target.value === '__custom__') {
+                              setCustomAcompananteMode(true);
+                              setNewCita({ ...newCita, acompanante: '' });
+                            } else {
+                              setNewCita({ ...newCita, acompanante: e.target.value });
+                            }
+                          }}
+                          className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 text-slate-700 font-medium outline-none focus:ring-2 focus:ring-rose-400"
+                        >
+                          <option value="Pendiente de asignar">⚠️ Pendiente de asignar</option>
+                          <optgroup label="Hermanos">
+                            {integrantes
+                              .filter(m => m.rol === 'Hermanos' || esHermano(m.nombre))
+                              .map(m => (
+                                <option key={m.id || m.nombre} value={m.nombre}>
+                                  🚗 {m.nombre}
+                                </option>
+                              ))}
+                          </optgroup>
+                          <optgroup label="Familiares y Allegados (Tía Mariuge, etc.)">
+                            {integrantes
+                              .filter(m => m.rol !== 'Hermanos' && !esHermano(m.nombre))
+                              .map(m => (
+                                <option key={m.id || m.nombre} value={m.nombre}>
+                                  👤 {m.nombre}
+                                </option>
+                              ))}
+                          </optgroup>
+                          <option value="__custom__">✏️ Escribir otro acompañante / persona externa...</option>
+                        </select>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[10px] text-slate-400 font-medium">Rápido:</span>
+                          <button
+                            type="button"
+                            onClick={() => setNewCita({ ...newCita, acompanante: 'Tía Mariuge' })}
+                            className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full border border-amber-200 font-semibold"
+                          >
+                            + Tía Mariuge
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Notas o preparaciones */}
@@ -7746,41 +7829,111 @@ export default function App() {
                       <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                         ¿Quién les lleva? (Conductor)
                       </label>
-                      {usuarioActivo && (
+                      <div className="flex items-center gap-2">
+                        {usuarioActivo && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCustomConductorMode(false);
+                              setNewTraslado({ ...newTraslado, conductor: usuarioActivo });
+                            }}
+                            className="text-[10px] font-bold text-amber-700 hover:text-amber-800 hover:underline flex items-center gap-1"
+                          >
+                            🚗 Yo ({usuarioActivo})
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => setNewTraslado({ ...newTraslado, conductor: usuarioActivo })}
-                          className="text-[10px] font-bold text-amber-700 hover:text-amber-800 hover:underline flex items-center gap-1"
+                          onClick={() => {
+                            const next = !customConductorMode;
+                            setCustomConductorMode(next);
+                            if (next && (newTraslado.conductor === 'Pendiente de asignar' || integrantes.some(i => i.nombre === newTraslado.conductor))) {
+                              setNewTraslado({ ...newTraslado, conductor: '' });
+                            } else if (!next && !newTraslado.conductor) {
+                              setNewTraslado({ ...newTraslado, conductor: 'Pendiente de asignar' });
+                            }
+                          }}
+                          className="text-[10px] font-bold text-amber-700 hover:text-amber-800 hover:underline"
                         >
-                          🚗 Yo les llevo ({usuarioActivo})
+                          {customConductorMode ? '👥 Lista de familia' : '✏️ Otro / Externa'}
                         </button>
-                      )}
+                      </div>
                     </div>
-                    <select
-                      value={newTraslado.conductor}
-                      onChange={(e) => setNewTraslado({ ...newTraslado, conductor: e.target.value })}
-                      className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 text-slate-700 font-medium outline-none focus:ring-2 focus:ring-amber-400"
-                    >
-                      <option value="Pendiente de asignar">⚠️ ¡Pendiente de asignar!</option>
-                      <optgroup label="Hermanos">
-                        {integrantes
-                          .filter(m => m.rol === 'Hermanos' || esHermano(m.nombre))
-                          .map(m => (
-                            <option key={m.id || m.nombre} value={m.nombre}>
-                              🚗 {m.nombre}
-                            </option>
-                          ))}
-                      </optgroup>
-                      <optgroup label="Otros Familiares">
-                        {integrantes
-                          .filter(m => m.rol !== 'Hermanos' && !esHermano(m.nombre) && m.nombre !== 'Encarnación' && m.nombre !== 'Jaime')
-                          .map(m => (
-                            <option key={m.id || m.nombre} value={m.nombre}>
-                              👤 {m.nombre}
-                            </option>
-                          ))}
-                      </optgroup>
-                    </select>
+
+                    {customConductorMode ? (
+                      <div className="space-y-1.5">
+                        <input
+                          type="text"
+                          placeholder="Nombre del conductor (ej: Tía Mariuge, Taxi, Vecino...)"
+                          className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 font-medium outline-none focus:ring-2 focus:ring-amber-400"
+                          value={newTraslado.conductor === 'Pendiente de asignar' ? '' : newTraslado.conductor}
+                          onChange={(e) => setNewTraslado({ ...newTraslado, conductor: e.target.value })}
+                        />
+                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                          <span className="text-[10px] text-slate-400 font-medium">Sugerencias:</span>
+                          <button
+                            type="button"
+                            onClick={() => setNewTraslado({ ...newTraslado, conductor: 'Tía Mariuge' })}
+                            className="text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full border border-amber-300 font-bold"
+                          >
+                            + Tía Mariuge
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewTraslado({ ...newTraslado, conductor: 'Taxi' })}
+                            className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full border border-slate-200 font-medium"
+                          >
+                            + Taxi
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <select
+                          value={newTraslado.conductor}
+                          onChange={(e) => {
+                            if (e.target.value === '__custom__') {
+                              setCustomConductorMode(true);
+                              setNewTraslado({ ...newTraslado, conductor: '' });
+                            } else {
+                              setNewTraslado({ ...newTraslado, conductor: e.target.value });
+                            }
+                          }}
+                          className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 text-slate-700 font-medium outline-none focus:ring-2 focus:ring-amber-400"
+                        >
+                          <option value="Pendiente de asignar">⚠️ ¡Pendiente de asignar!</option>
+                          <optgroup label="Hermanos">
+                            {integrantes
+                              .filter(m => m.rol === 'Hermanos' || esHermano(m.nombre))
+                              .map(m => (
+                                <option key={m.id || m.nombre} value={m.nombre}>
+                                  🚗 {m.nombre}
+                                </option>
+                              ))}
+                          </optgroup>
+                          <optgroup label="Familiares y Allegados (Tía Mariuge, etc.)">
+                            {integrantes
+                              .filter(m => m.rol !== 'Hermanos' && !esHermano(m.nombre) && m.nombre !== 'Encarnación' && m.nombre !== 'Jaime')
+                              .map(m => (
+                                <option key={m.id || m.nombre} value={m.nombre}>
+                                  👤 {m.nombre}
+                                </option>
+                              ))}
+                          </optgroup>
+                          <option value="__custom__">✏️ Escribir otro conductor / persona externa...</option>
+                        </select>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[10px] text-slate-400 font-medium">Rápido:</span>
+                          <button
+                            type="button"
+                            onClick={() => setNewTraslado({ ...newTraslado, conductor: 'Tía Mariuge' })}
+                            className="text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full border border-amber-300 font-bold"
+                          >
+                            + Tía Mariuge
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Notas */}
