@@ -7738,8 +7738,8 @@ export default function App() {
 
           {/* 6. Modal de Citas Médicas */}
           {showCitaModal && (
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn overflow-y-auto">
-              <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-100 my-8">
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-start justify-center p-3 sm:p-4 z-50 animate-fadeIn overflow-y-auto">
+              <div className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-slate-100 my-4 sm:my-8">
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                   <div className="flex items-center gap-2">
                     <span className="p-2 bg-rose-100 text-rose-600 rounded-2xl text-lg">🩺</span>
@@ -7761,51 +7761,48 @@ export default function App() {
                 </div>
 
                 <form onSubmit={handleSaveCita} className="space-y-3.5 text-xs">
-                  {/* Paciente con botones rápidos */}
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      Paciente *
+                  {/* Paciente con selector destacado y claro */}
+                  <div className="bg-slate-50/90 p-3.5 rounded-2xl border border-slate-200">
+                    <label className="block text-[11px] font-black text-slate-800 uppercase tracking-wider mb-2 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <span>👤</span> ¿Para quién es la cita médica? *
+                      </span>
+                      <span className="text-[10px] text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+                        {newCita.paciente || 'Selecciona'}
+                      </span>
                     </label>
-                    <div className="grid grid-cols-2 gap-2 mb-2">
+                    <div className="grid grid-cols-2 gap-2.5">
                       <button
                         type="button"
                         onClick={() => setNewCita({ ...newCita, paciente: 'Mamá (Encarnación)' })}
-                        className={`p-2.5 rounded-2xl border flex items-center justify-center gap-2 font-bold transition text-xs ${
+                        className={`p-3 rounded-2xl border-2 flex items-center justify-center gap-2 font-black transition text-xs shadow-2xs ${
                           newCita.paciente === 'Mamá (Encarnación)'
-                            ? 'bg-fuchsia-50 border-fuchsia-400 text-fuchsia-900 shadow-xs'
-                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                            ? 'bg-fuchsia-100/80 border-fuchsia-500 text-fuchsia-950 ring-2 ring-fuchsia-300 scale-[1.01]'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300'
                         }`}
                       >
-                        <span>👵</span> Mamá (Encarnación)
+                        <span className="text-xl">👵</span>
+                        <div className="text-left leading-tight">
+                          <div className="text-xs font-black">Mamá</div>
+                          <div className="text-[10px] font-medium text-fuchsia-800 opacity-90">Encarnación</div>
+                        </div>
                       </button>
                       <button
                         type="button"
                         onClick={() => setNewCita({ ...newCita, paciente: 'Papá (Jaime)' })}
-                        className={`p-2.5 rounded-2xl border flex items-center justify-center gap-2 font-bold transition text-xs ${
+                        className={`p-3 rounded-2xl border-2 flex items-center justify-center gap-2 font-black transition text-xs shadow-2xs ${
                           newCita.paciente === 'Papá (Jaime)'
-                            ? 'bg-blue-50 border-blue-400 text-blue-900 shadow-xs'
-                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                            ? 'bg-blue-100/80 border-blue-500 text-blue-950 ring-2 ring-blue-300 scale-[1.01]'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300'
                         }`}
                       >
-                        <span>👴</span> Papá (Jaime)
+                        <span className="text-xl">👴</span>
+                        <div className="text-left leading-tight">
+                          <div className="text-xs font-black">Papá</div>
+                          <div className="text-[10px] font-medium text-blue-800 opacity-90">Jaime</div>
+                        </div>
                       </button>
                     </div>
-
-                    <select
-                      value={newCita.paciente}
-                      onChange={(e) => setNewCita({ ...newCita, paciente: e.target.value })}
-                      className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 text-slate-700 font-medium outline-none focus:ring-2 focus:ring-rose-400"
-                    >
-                      <option value="Mamá (Encarnación)">👵 Mamá (Encarnación)</option>
-                      <option value="Papá (Jaime)">👴 Papá (Jaime)</option>
-                      {integrantes
-                        .filter(m => m.nombre !== 'Encarnación' && m.nombre !== 'Jaime')
-                        .map(m => (
-                          <option key={m.id || m.nombre} value={m.nombre}>
-                            👤 {m.nombre}
-                          </option>
-                        ))}
-                    </select>
                   </div>
 
                   {/* Especialidad con sugerencias rápidas */}
@@ -8388,8 +8385,8 @@ export default function App() {
 
           {/* 7. Modal de Traslados de los Padres */}
           {showTrasladoModal && (
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn overflow-y-auto">
-              <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-100 my-8">
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-start justify-center p-3 sm:p-4 z-50 animate-fadeIn overflow-y-auto">
+              <div className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-slate-100 my-4 sm:my-8">
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                   <div className="flex items-center gap-2">
                     <span className="p-2 bg-amber-100 text-amber-600 rounded-2xl text-lg">🚗</span>
