@@ -2039,6 +2039,8 @@ export default function App() {
         arbol: 'arbol-genealogico-familia-barnuevo.pdf',
         calendar: 'calendario-vacaciones-familia-barnuevo.pdf',
         cumples: 'agenda-cumpleanos-familia-barnuevo.pdf',
+        citas: 'citas-medicas-padres-barnuevo.pdf',
+        traslados: 'traslados-padres-alcala-madrid.pdf',
         full: 'reporte-familiar-completo-barnuevo.pdf'
       };
 
@@ -4349,6 +4351,188 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {/* PRINT TYPE: CITAS MÉDICAS */}
+          {printType === 'citas' && (
+            <div className="pdf-page-section p-10 bg-white" data-orientation="portrait" style={{ width: '850px', margin: '0 auto' }}>
+              <div className="text-center pb-6 border-b-2 border-rose-500 mb-6">
+                <div className="text-3xl mb-1">🩺</div>
+                <h1 className="text-2xl font-black text-rose-800">Citas Médicas y Revisiones de los Padres</h1>
+                <p className="text-xs text-slate-500 mt-1">
+                  Encarnación (Mamá) y Jaime (Papá) • Sincronizado en tiempo real • Familia Barnuevo
+                </p>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Fecha del informe: {new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}
+                </p>
+              </div>
+
+              {/* Resumen numérico */}
+              <div className="grid grid-cols-4 gap-3 mb-6">
+                <div className="bg-rose-50 border border-rose-200 p-3 rounded-xl text-center">
+                  <span className="text-[10px] uppercase font-bold text-rose-600 block">Total Citas</span>
+                  <span className="text-xl font-black text-rose-900">{citasMedicas.length}</span>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-center">
+                  <span className="text-[10px] uppercase font-bold text-amber-600 block">Pendientes</span>
+                  <span className="text-xl font-black text-amber-900">{citasMedicas.filter(c => c.estado !== 'completada').length}</span>
+                </div>
+                <div className="bg-purple-50 border border-purple-200 p-3 rounded-xl text-center">
+                  <span className="text-[10px] uppercase font-bold text-purple-600 block">Mamá</span>
+                  <span className="text-xl font-black text-purple-900">{citasMedicas.filter(c => c.paciente?.includes('Mamá') || c.paciente?.includes('Encarnación')).length}</span>
+                </div>
+                <div className="bg-sky-50 border border-sky-200 p-3 rounded-xl text-center">
+                  <span className="text-[10px] uppercase font-bold text-sky-600 block">Papá</span>
+                  <span className="text-xl font-black text-sky-900">{citasMedicas.filter(c => c.paciente?.includes('Papá') || c.paciente?.includes('Jaime')).length}</span>
+                </div>
+              </div>
+
+              {/* Listado de Citas */}
+              <div className="space-y-3">
+                {[...citasMedicas]
+                  .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
+                  .map((c, idx) => {
+                    const isCompletada = c.estado === 'completada';
+                    const sinAcompanante = !c.acompanante || c.acompanante === 'Pendiente de asignar';
+                    return (
+                      <div 
+                        key={c.id || idx} 
+                        className={`p-4 border rounded-2xl ${isCompletada ? 'bg-slate-50 border-slate-200 opacity-75' : 'bg-white border-slate-200 shadow-xs'}`}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${c.paciente?.includes('Mamá') ? 'bg-purple-100 text-purple-800' : 'bg-sky-100 text-sky-800'}`}>
+                              {c.paciente?.includes('Mamá') ? '👵 Mamá (Encarnación)' : '👴 Papá (Jaime)'}
+                            </span>
+                            <span className="text-xs font-black text-slate-800">
+                              {c.especialidad}
+                            </span>
+                            {c.medico && (
+                              <span className="text-[11px] text-slate-500 font-medium">
+                                ({c.medico})
+                              </span>
+                            )}
+                          </div>
+                          <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full ${isCompletada ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                            {isCompletada ? '✅ Realizada' : '⏳ Pendiente'}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2 text-xs py-1 border-t border-b border-slate-100 my-2">
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-400 block uppercase">Fecha y Hora</span>
+                            <span className="font-bold text-slate-800">📅 {formatearFechaStr(c.fecha)} • {c.hora || '10:00'}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-400 block uppercase">Centro / Hospital</span>
+                            <span className="font-semibold text-slate-700">🏥 {c.centro}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-400 block uppercase">Acompañante</span>
+                            <span className={`font-bold ${sinAcompanante ? 'text-amber-600' : 'text-emerald-700'}`}>
+                              🚗 {sinAcompanante ? '⚠️ ¡Sin asignar!' : c.acompanante}
+                            </span>
+                          </div>
+                        </div>
+
+                        {c.notas && (
+                          <div className="text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-150">
+                            <strong>📋 Instrucciones y Notas:</strong> {c.notas}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+
+              <div className="text-center pt-8 border-t text-[10px] text-slate-400 mt-8">
+                Portal Familiar Familia Barnuevo • Documento informativo para el cuidado de los padres
+              </div>
+            </div>
+          )}
+
+          {/* PRINT TYPE: TRASLADOS PADRES */}
+          {printType === 'traslados' && (
+            <div className="pdf-page-section p-10 bg-white" data-orientation="portrait" style={{ width: '850px', margin: '0 auto' }}>
+              <div className="text-center pb-6 border-b-2 border-amber-500 mb-6">
+                <div className="text-3xl mb-1">🚗</div>
+                <h1 className="text-2xl font-black text-amber-900">Traslados y Estancias de los Padres</h1>
+                <p className="text-xs text-slate-500 mt-1">
+                  Organización de viajes entre Alcalá de Henares (Esgaravita) y Madrid • Familia Barnuevo
+                </p>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Fecha del informe: {new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}
+                </p>
+              </div>
+
+              {/* Indicador de Ubicación Actual */}
+              <div className="bg-amber-50 border-2 border-amber-300 p-4 rounded-2xl flex items-center justify-between mb-6">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-800 block">ESTADO ACTUAL</span>
+                  <p className="text-base font-black text-slate-900 mt-0.5 flex items-center gap-2">
+                    <span>{ubicacionActualPadres.includes('Alcalá') ? '🏡' : '🏢'}</span>
+                    Actualmente alojados en: <span className="text-amber-800 underline decoration-amber-400">{ubicacionActualPadres}</span>
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-amber-700 font-bold block">Total viajes registrados: {trasladosPadres.length}</span>
+                  <span className="text-[10px] text-slate-500">Pendientes: {trasladosPadres.filter(t => t.estado !== 'realizado').length}</span>
+                </div>
+              </div>
+
+              {/* Listado de Traslados */}
+              <div className="space-y-3">
+                {[...trasladosPadres]
+                  .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
+                  .map((t, idx) => {
+                    const isRealizado = t.estado === 'realizado';
+                    const sinConductor = !t.conductor || t.conductor === 'Pendiente de asignar';
+                    return (
+                      <div 
+                        key={t.id || idx} 
+                        className={`p-4 border rounded-2xl ${isRealizado ? 'bg-slate-50 border-slate-200 opacity-75' : 'bg-white border-amber-200/70 shadow-xs'}`}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-black text-slate-900">
+                              {t.origen?.includes('Madrid') ? '🏢' : '🏡'} {t.origen} ➔ {t.destino?.includes('Madrid') ? '🏢' : '🏡'} {t.destino}
+                            </span>
+                            <span className="text-[11px] font-bold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-full">
+                              {t.momentoDia || 'Horario'}
+                            </span>
+                          </div>
+                          <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full ${isRealizado ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                            {isRealizado ? '✅ Realizado' : '⏳ Pendiente'}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-xs py-1 border-t border-b border-slate-100 my-2">
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-400 block uppercase">Fecha y Hora</span>
+                            <span className="font-bold text-slate-800">📅 {formatearFechaStr(t.fecha)} • {t.hora || '18:00'}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-400 block uppercase">Conductor Asignado</span>
+                            <span className={`font-bold ${sinConductor ? 'text-amber-600' : 'text-emerald-700'}`}>
+                              🚗 {sinConductor ? '⚠️ ¡Sin conductor asignado!' : t.conductor}
+                            </span>
+                          </div>
+                        </div>
+
+                        {t.notas && (
+                          <div className="text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-150">
+                            <strong>📋 Notas / Equipaje:</strong> {t.notas}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+
+              <div className="text-center pt-8 border-t text-[10px] text-slate-400 mt-8">
+                Portal Familiar Familia Barnuevo • Organización y traslados de Papá y Mamá
+              </div>
+            </div>
+          )}
         </div>
       )}
           {/* --- TOAST --- */}
@@ -5718,6 +5902,13 @@ export default function App() {
 
                       <div className="flex items-center gap-2 flex-wrap">
                         <button
+                          onClick={() => handleDownloadPDF('citas')}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl flex items-center gap-1.5 transition-all shadow-md"
+                          title="Descargar agenda de citas médicas en PDF"
+                        >
+                          <Download className="w-4 h-4" /> <span>Descargar PDF</span>
+                        </button>
+                        <button
                           onClick={handleEnviarResumenCitasTelegram}
                           className="bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl flex items-center gap-1.5 transition-all shadow-md"
                           title="Enviar lista de próximas citas al grupo de Telegram (Laos)"
@@ -6008,6 +6199,13 @@ export default function App() {
                       </div>
 
                       <div className="flex gap-2 flex-wrap w-full md:w-auto">
+                        <button
+                          onClick={() => handleDownloadPDF('traslados')}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition shadow-md flex items-center gap-1.5"
+                          title="Descargar planificación de traslados en PDF"
+                        >
+                          <Download className="w-4 h-4" /> <span>Descargar PDF</span>
+                        </button>
                         <button
                           onClick={handleEnviarResumenTrasladosTelegram}
                           className="bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition shadow-sm flex items-center gap-1.5"
@@ -7258,6 +7456,28 @@ export default function App() {
                       <p className="text-[10px] text-slate-400 mt-0.5">Listado anual ordenado con fechas de santos y cumpleaños.</p>
                     </div>
                     <Download className="w-4 h-4 text-pink-600 group-hover:scale-110 transition-transform" />
+                  </button>
+
+                  <button
+                    onClick={() => handleDownloadPDF('citas')}
+                    className="w-full text-left p-3.5 border border-rose-100 hover:border-rose-300 rounded-2xl bg-rose-50/20 hover:bg-rose-50/50 transition-all flex justify-between items-center group"
+                  >
+                    <div>
+                      <p className="text-xs font-black text-slate-800 flex items-center gap-1">🩺 Citas Médicas y Revisiones de los Padres</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Listado completo con fechas, horas, especialistas, centros y acompañantes.</p>
+                    </div>
+                    <Download className="w-4 h-4 text-rose-600 group-hover:scale-110 transition-transform" />
+                  </button>
+
+                  <button
+                    onClick={() => handleDownloadPDF('traslados')}
+                    className="w-full text-left p-3.5 border border-amber-100 hover:border-amber-300 rounded-2xl bg-amber-50/20 hover:bg-amber-50/50 transition-all flex justify-between items-center group"
+                  >
+                    <div>
+                      <p className="text-xs font-black text-slate-800 flex items-center gap-1">🚗 Traslados y Estancias de los Padres</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Ubicación actual (Alcalá ⇄ Madrid), próximos viajes y conductores asignados.</p>
+                    </div>
+                    <Download className="w-4 h-4 text-amber-600 group-hover:scale-110 transition-transform" />
                   </button>
 
                   <button
