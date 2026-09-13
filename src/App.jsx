@@ -1632,7 +1632,10 @@ export default function App() {
             const esHoy = c.fecha === hoyIso;
             msg += `🏥 <b>Cita Médica ${esHoy ? 'HOY' : 'MAÑANA'}:</b>\n`;
             msg += `• <b>${c.paciente}</b> tiene cita de <b>${c.especialidad}</b> a las <b>${c.hora || 'hora por confirmar'}</b> en ${c.centro}.\n`;
-            msg += `• 🚗 Acompaña: <b>${c.acompanante && c.acompanante !== 'Pendiente de asignar' ? c.acompanante : '⚠️ ¡Pendiente de asignar!'}</b>\n`;
+            const acompTxt = c.acompanante === 'No necesita acompañante'
+              ? '🚶 No necesita acompañante (va solo/a)'
+              : (c.acompanante && c.acompanante !== 'Pendiente de asignar' ? c.acompanante : '⚠️ ¡Pendiente de asignar!');
+            msg += `• 🚗 Acompaña: <b>${acompTxt}</b>\n`;
             if (c.notas) msg += `• 📋 <i>${c.notas}</i>\n`;
             msg += '\n';
           });
@@ -1915,16 +1918,21 @@ export default function App() {
   const otrosAcompanantesRegistrados = useMemo(() => {
     const nombres = new Set();
     citasMedicas.forEach(c => {
-      const a = (c.acompanante || '').trim();
-      if (
-        a && 
-        a !== 'Pendiente de asignar' && 
-        a !== 'Taxi' &&
-        a !== 'Taxi / Sanitario' &&
-        !integrantes.some(i => i.nombre?.toLowerCase() === a.toLowerCase())
-      ) {
-        nombres.add(a);
-      }
+      [c.acompanante, c.quienLleva, c.quienRecoge].forEach(raw => {
+        const a = (raw || '').trim();
+        if (
+          a && 
+          a !== 'Pendiente de asignar' && 
+          a !== 'Taxi' &&
+          a !== 'Taxi / Sanitario' &&
+          !a.toLowerCase().includes('no necesita') &&
+          !a.includes('Lleva:') &&
+          !a.includes('Recoge:') &&
+          !integrantes.some(i => i.nombre?.toLowerCase() === a.toLowerCase())
+        ) {
+          nombres.add(a);
+        }
+      });
     });
     return Array.from(nombres).sort();
   }, [citasMedicas, integrantes]);
@@ -2864,18 +2872,26 @@ export default function App() {
 
         if (notifyTelegramOnCita) {
           const accionTxt = isEditingCita ? 'actualizada' : 'programada';
-          const sinLlevar = !citaData.quienLleva || citaData.quienLleva === 'Pendiente de asignar';
-          const sinRecoger = !citaData.quienRecoge || citaData.quienRecoge === 'Pendiente de asignar';
+          const esNoNecesitaLleva = citaData.quienLleva === 'No necesita acompañante';
+          const esNoNecesitaRecoge = citaData.quienRecoge === 'No necesita acompañante';
+          const sinLlevar = (!citaData.quienLleva || citaData.quienLleva === 'Pendiente de asignar') && !esNoNecesitaLleva;
+          const sinRecoger = (!citaData.quienRecoge || citaData.quienRecoge === 'Pendiente de asignar') && !esNoNecesitaRecoge;
           const emojiAlerta = (sinLlevar || sinRecoger) ? '⚠️' : '🏥';
           
           let textoAcompanamiento = '';
           if (citaData.quienLleva === citaData.quienRecoge) {
-            textoAcompanamiento = sinLlevar 
-              ? '🚗 <b>Acompañante:</b> ⚠️ <b>¡Pendiente de asignar! ¿Quién le acompaña?</b>' 
-              : `🚗 <b>Acompaña (Ida y Vuelta):</b> ${citaData.quienLleva}`;
+            if (esNoNecesitaLleva) {
+              textoAcompanamiento = '🚶 <b>Acompañamiento:</b> No necesita acompañante (va solo/a)';
+            } else if (sinLlevar) {
+              textoAcompanamiento = '🚗 <b>Acompañante:</b> ⚠️ <b>¡Pendiente de asignar! ¿Quién le acompaña?</b>';
+            } else {
+              textoAcompanamiento = `🚗 <b>Acompaña (Ida y Vuelta):</b> ${citaData.quienLleva}`;
+            }
           } else {
-            textoAcompanamiento = `🚗 <b>Ida (Lleva):</b> ${sinLlevar ? '⚠️ <i>¡Pendiente de asignar!</i>' : citaData.quienLleva}\n` +
-                                  `🚙 <b>Vuelta (Recoge):</b> ${sinRecoger ? '⚠️ <i>¡Pendiente de asignar!</i>' : citaData.quienRecoge}`;
+            const txtLleva = esNoNecesitaLleva ? '🚶 No necesita acompañante' : (sinLlevar ? '⚠️ <i>¡Pendiente de asignar!</i>' : citaData.quienLleva);
+            const txtRecoge = esNoNecesitaRecoge ? '🚶 No necesita acompañante' : (sinRecoger ? '⚠️ <i>¡Pendiente de asignar!</i>' : citaData.quienRecoge);
+            textoAcompanamiento = `🚗 <b>Ida (Lleva):</b> ${txtLleva}\n` +
+                                  `🚙 <b>Vuelta (Recoge):</b> ${txtRecoge}`;
           }
 
           const msgTg = `${emojiAlerta} <b>Cita Médica ${accionTxt}</b>\n\n` +
@@ -3058,7 +3074,10 @@ export default function App() {
       msg += `• <b>${c.paciente}</b>: ${c.especialidad}\n`;
       msg += `  📅 ${formatearFechaStr(c.fecha)} (${c.hora || 'hora por confirmar'})\n`;
       msg += `  📍 ${c.centro}\n`;
-      msg += `  🚗 Acompaña: <b>${c.acompanante && c.acompanante !== 'Pendiente de asignar' ? c.acompanante : '⚠️ ¡Pendiente!'}</b>\n`;
+      const acompTxt = c.acompanante === 'No necesita acompañante'
+        ? '🚶 No necesita acompañante (va solo/a)'
+        : (c.acompanante && c.acompanante !== 'Pendiente de asignar' ? c.acompanante : '⚠️ ¡Pendiente!');
+      msg += `  🚗 Acompaña: <b>${acompTxt}</b>\n`;
       if (c.notas) msg += `  📋 <i>${c.notas}</i>\n`;
       msg += `\n`;
     });
@@ -4544,8 +4563,14 @@ export default function App() {
                           </div>
                           <div>
                             <span className="text-[10px] font-bold text-slate-400 block uppercase">Acompañante</span>
-                            <span className={`font-bold ${sinAcompanante ? 'text-amber-600' : 'text-emerald-700'}`}>
-                              🚗 {sinAcompanante ? '⚠️ ¡Sin asignar!' : c.acompanante}
+                            <span className={`font-bold ${
+                              c.acompanante === 'No necesita acompañante'
+                                ? 'text-slate-600'
+                                : sinAcompanante ? 'text-amber-600' : 'text-emerald-700'
+                            }`}>
+                              {c.acompanante === 'No necesita acompañante'
+                                ? '🚶 No necesita acompañante'
+                                : `🚗 ${sinAcompanante ? '⚠️ ¡Sin asignar!' : c.acompanante}`}
                             </span>
                           </div>
                         </div>
@@ -4999,7 +5024,11 @@ export default function App() {
                                   <p className="text-xs text-rose-700 font-bold truncate">🩺 {proxima.especialidad}</p>
                                   <p className="text-[11px] text-slate-500 truncate">📍 {proxima.centro} ({proxima.hora})</p>
                                   <div className="pt-1">
-                                    {proxima.acompanante && proxima.acompanante !== 'Pendiente de asignar' ? (
+                                    {proxima.acompanante === 'No necesita acompañante' ? (
+                                      <span className="text-[9px] bg-slate-100 text-slate-700 border border-slate-200 font-bold px-2 py-0.5 rounded-full inline-block truncate max-w-[150px]">
+                                        🚶 No necesita acompañante
+                                      </span>
+                                    ) : proxima.acompanante && proxima.acompanante !== 'Pendiente de asignar' ? (
                                       <span className="text-[9px] bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold px-2 py-0.5 rounded-full inline-block truncate max-w-[140px]">
                                         🚗 Acompaña: {proxima.acompanante}
                                       </span>
@@ -6226,9 +6255,34 @@ export default function App() {
                                     {(() => {
                                       const lleva = cita.quienLleva || (cita.acompanante && !cita.acompanante.includes('Lleva:') ? cita.acompanante : 'Pendiente de asignar');
                                       const recoge = cita.quienRecoge || (cita.acompanante && !cita.acompanante.includes('Recoge:') ? cita.acompanante : 'Pendiente de asignar');
-                                      const sinLleva = !lleva || lleva === 'Pendiente de asignar';
-                                      const sinRecoge = !recoge || recoge === 'Pendiente de asignar';
-                                      const sonIguales = lleva === recoge && !sinLleva;
+                                      const esNoNecesitaTotal = (cita.acompanante === 'No necesita acompañante') || (lleva === 'No necesita acompañante' && recoge === 'No necesita acompañante');
+                                      const esNoNecesitaLleva = lleva === 'No necesita acompañante';
+                                      const esNoNecesitaRecoge = recoge === 'No necesita acompañante';
+                                      const sinLleva = (!lleva || lleva === 'Pendiente de asignar') && !esNoNecesitaLleva;
+                                      const sinRecoge = (!recoge || recoge === 'Pendiente de asignar') && !esNoNecesitaRecoge;
+                                      const sonIguales = lleva === recoge && !sinLleva && !esNoNecesitaTotal;
+
+                                      if (esNoNecesitaTotal) {
+                                        return (
+                                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="text-xs">🚶</span>
+                                              <span className="text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 px-3 py-1 rounded-full flex items-center gap-1.5">
+                                                <span>🚶</span> No necesita acompañante (Va solo/a)
+                                              </span>
+                                            </div>
+                                            {!esCompletada && (
+                                              <button
+                                                onClick={() => handleAsignarmeComoAcompanante(cita, 'ambos')}
+                                                className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-lg transition"
+                                                title="Acompañarle de todas formas"
+                                              >
+                                                🙋‍♂️ Acompañarle
+                                              </button>
+                                            )}
+                                          </div>
+                                        );
+                                      }
 
                                       if (sonIguales) {
                                         return (
@@ -6249,14 +6303,18 @@ export default function App() {
                                           {/* Fila Lleva */}
                                           <div className="flex items-center justify-between gap-2 flex-wrap">
                                             <div className="flex items-center gap-1.5">
-                                              <span className="text-xs">🚗</span>
+                                              <span className="text-xs">{esNoNecesitaLleva ? '🚶' : '🚗'}</span>
                                               <span className="text-[11px] text-slate-500 font-medium">Lleva (Ida):</span>
-                                              {sinLleva ? (
+                                              {esNoNecesitaLleva ? (
+                                                <span className="text-xs font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+                                                  🚶 No necesita (Va solo/a)
+                                                </span>
+                                              ) : sinLleva ? (
                                                 <span className="text-[10px] bg-rose-100 text-rose-800 font-bold px-2 py-0.5 rounded-full border border-rose-200 animate-pulse">
                                                   ¡Sin asignar!
                                                 </span>
                                               ) : (
-                                                <span className="text-xs font-black text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                                <span className="text-xs font-black text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
                                                   {lleva}
                                                 </span>
                                               )}
@@ -6274,9 +6332,13 @@ export default function App() {
                                           {/* Fila Recoge */}
                                           <div className="flex items-center justify-between gap-2 flex-wrap">
                                             <div className="flex items-center gap-1.5">
-                                              <span className="text-xs">🚙</span>
+                                              <span className="text-xs">{esNoNecesitaRecoge ? '🚶' : '🚙'}</span>
                                               <span className="text-[11px] text-slate-500 font-medium">Recoge (Vuelta):</span>
-                                              {sinRecoge ? (
+                                              {esNoNecesitaRecoge ? (
+                                                <span className="text-xs font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+                                                  🚶 No necesita (Vuelve solo/a)
+                                                </span>
+                                              ) : sinRecoge ? (
                                                 <span className="text-[10px] bg-rose-100 text-rose-800 font-bold px-2 py-0.5 rounded-full border border-rose-200 animate-pulse">
                                                   ¡Sin asignar!
                                                 </span>
@@ -7888,16 +7950,64 @@ export default function App() {
                           Indica quién lleva a la cita (ida) y quién recoge tras la consulta (vuelta).
                         </p>
                       </div>
-                      {newCita.quienLleva && newCita.quienRecoge && newCita.quienLleva !== 'Pendiente de asignar' && (
-                        <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border ${
-                          newCita.quienLleva === newCita.quienRecoge
-                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                            : 'bg-indigo-100 text-indigo-800 border-indigo-300'
-                        }`}>
-                          {newCita.quienLleva === newCita.quienRecoge ? '✓ Misma persona ida y vuelta' : '🔄 Diferente ida y vuelta'}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const yaEsNoNecesita = newCita.quienLleva === 'No necesita acompañante' && newCita.quienRecoge === 'No necesita acompañante';
+                            if (yaEsNoNecesita) {
+                              setNewCita(prev => ({
+                                ...prev,
+                                quienLleva: 'Pendiente de asignar',
+                                quienRecoge: 'Pendiente de asignar'
+                              }));
+                            } else {
+                              setNewCita(prev => ({
+                                ...prev,
+                                quienLleva: 'No necesita acompañante',
+                                quienRecoge: 'No necesita acompañante'
+                              }));
+                            }
+                          }}
+                          className={`text-[11px] px-3 py-1 rounded-xl font-bold border transition flex items-center gap-1.5 shadow-2xs ${
+                            newCita.quienLleva === 'No necesita acompañante' && newCita.quienRecoge === 'No necesita acompañante'
+                              ? 'bg-slate-800 text-white border-slate-900 ring-2 ring-slate-400'
+                              : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                          }`}
+                        >
+                          <span>🚶</span> No necesita acompañante
+                        </button>
+                        {newCita.quienLleva && newCita.quienRecoge && newCita.quienLleva !== 'Pendiente de asignar' && newCita.quienLleva !== 'No necesita acompañante' && (
+                          <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border ${
+                            newCita.quienLleva === newCita.quienRecoge
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                              : 'bg-indigo-100 text-indigo-800 border-indigo-300'
+                          }`}>
+                            {newCita.quienLleva === newCita.quienRecoge ? '✓ Misma persona ida y vuelta' : '🔄 Diferente ida y vuelta'}
+                          </span>
+                        )}
+                      </div>
                     </div>
+
+                    {/* Aviso si no necesita acompañante */}
+                    {newCita.quienLleva === 'No necesita acompañante' && newCita.quienRecoge === 'No necesita acompañante' && (
+                      <div className="bg-slate-100/90 border border-slate-300/80 rounded-xl p-3 flex items-center justify-between gap-2 text-xs text-slate-700 animate-fadeIn">
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">🚶</span>
+                          <div>
+                            <p className="font-bold text-slate-800">Cita marcada como: No necesita acompañante</p>
+                            <p className="text-[10px] text-slate-500 font-medium">El paciente va y vuelve por su cuenta (a pie, transporte o taxi autónomo).</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setNewCita(prev => ({ ...prev, quienLleva: '', quienRecoge: '' }))}
+                          className="text-[10px] font-bold text-rose-600 hover:text-rose-800 hover:underline shrink-0 bg-white px-2.5 py-1 rounded-lg border border-slate-200"
+                        >
+                          Asignar persona
+                        </button>
+                      </div>
+                    )}
 
                     {/* 1. ¿QUIÉN LE LLEVA (IDA)? */}
                     <div className="space-y-1.5 bg-white/70 p-3 rounded-xl border border-rose-150">
@@ -7953,7 +8063,7 @@ export default function App() {
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] text-slate-500 font-bold shrink-0">O elegir:</span>
                         <select
-                          value={integrantes.some(i => i.nombre === newCita.quienLleva) ? newCita.quienLleva : ''}
+                          value={integrantes.some(i => i.nombre === newCita.quienLleva) || newCita.quienLleva === 'No necesita acompañante' ? newCita.quienLleva : ''}
                           onChange={(e) => {
                             if (e.target.value) {
                               const val = e.target.value;
@@ -7967,6 +8077,7 @@ export default function App() {
                           className="w-full p-1.5 text-[11px] border border-slate-200 rounded-lg bg-white text-slate-700 font-medium outline-none focus:ring-1 focus:ring-rose-400"
                         >
                           <option value="">-- Seleccionar familiar / contacto para llevar --</option>
+                          <option value="No necesita acompañante">🚶 No necesita acompañante (va solo/a)</option>
                           <optgroup label="Hermanos">
                             {integrantes.filter(m => m.rol === 'Hermanos' || esHermano(m.nombre)).map(m => (
                               <option key={m.id || m.nombre} value={m.nombre}>🚗 {m.nombre}</option>
@@ -7990,6 +8101,20 @@ export default function App() {
                       {/* Atajos rápidos para llevar */}
                       <div className="flex flex-wrap items-center gap-1 pt-0.5">
                         <span className="text-[9px] text-slate-400 font-medium">Atajos:</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const val = 'No necesita acompañante';
+                            setNewCita(prev => ({
+                              ...prev,
+                              quienLleva: val,
+                              quienRecoge: (!prev.quienRecoge || prev.quienRecoge === 'Pendiente de asignar') ? val : prev.quienRecoge
+                            }));
+                          }}
+                          className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-800 px-2 py-0.5 rounded-full border border-slate-300 font-bold transition"
+                        >
+                          🚶 No necesita (Ida)
+                        </button>
                         <button
                           type="button"
                           onClick={() => {
@@ -8058,7 +8183,7 @@ export default function App() {
                               className="text-[10px] font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-lg border border-indigo-200 transition"
                               title="Copiar el conductor de ida para la recogida"
                             >
-                              = Misma persona ({newCita.quienLleva})
+                              = Misma persona ({newCita.quienLleva === 'No necesita acompañante' ? 'No necesita' : newCita.quienLleva})
                             </button>
                           )}
                           {usuarioActivo && (
@@ -8097,13 +8222,14 @@ export default function App() {
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] text-slate-500 font-bold shrink-0">O elegir:</span>
                         <select
-                          value={integrantes.some(i => i.nombre === newCita.quienRecoge) ? newCita.quienRecoge : ''}
+                          value={integrantes.some(i => i.nombre === newCita.quienRecoge) || newCita.quienRecoge === 'No necesita acompañante' ? newCita.quienRecoge : ''}
                           onChange={(e) => {
                             if (e.target.value) setNewCita(prev => ({ ...prev, quienRecoge: e.target.value }));
                           }}
                           className="w-full p-1.5 text-[11px] border border-slate-200 rounded-lg bg-white text-slate-700 font-medium outline-none focus:ring-1 focus:ring-indigo-400"
                         >
                           <option value="">-- Seleccionar familiar / contacto para recoger --</option>
+                          <option value="No necesita acompañante">🚶 No necesita acompañante (vuelve solo/a)</option>
                           <optgroup label="Hermanos">
                             {integrantes.filter(m => m.rol === 'Hermanos' || esHermano(m.nombre)).map(m => (
                               <option key={m.id || m.nombre} value={m.nombre}>🚙 {m.nombre}</option>
@@ -8127,13 +8253,20 @@ export default function App() {
                       {/* Atajos rápidos para recoger */}
                       <div className="flex flex-wrap items-center gap-1 pt-0.5">
                         <span className="text-[9px] text-slate-400 font-medium">Atajos:</span>
+                        <button
+                          type="button"
+                          onClick={() => setNewCita(prev => ({ ...prev, quienRecoge: 'No necesita acompañante' }))}
+                          className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-800 px-2 py-0.5 rounded-full border border-slate-300 font-bold transition"
+                        >
+                          🚶 No necesita (Vuelta)
+                        </button>
                         {newCita.quienLleva && newCita.quienLleva !== 'Pendiente de asignar' && newCita.quienRecoge !== newCita.quienLleva && (
                           <button
                             type="button"
                             onClick={() => setNewCita(prev => ({ ...prev, quienRecoge: prev.quienLleva }))}
                             className="text-[10px] bg-indigo-100 hover:bg-indigo-200 text-indigo-900 px-2 py-0.5 rounded-full border border-indigo-300 font-bold transition"
                           >
-                            = Igual que ida ({newCita.quienLleva})
+                            = Igual que ida ({newCita.quienLleva === 'No necesita acompañante' ? 'No necesita' : newCita.quienLleva})
                           </button>
                         )}
                         <button
