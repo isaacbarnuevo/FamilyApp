@@ -1893,6 +1893,39 @@ export default function App() {
     return futuras.length > 0 ? futuras[0] : null;
   }, [vacaciones]);
 
+  const otrosConductoresRegistrados = useMemo(() => {
+    const nombres = new Set();
+    trasladosPadres.forEach(t => {
+      const c = (t.conductor || '').trim();
+      if (
+        c && 
+        c !== 'Pendiente de asignar' && 
+        c !== 'Taxi' &&
+        !integrantes.some(i => i.nombre?.toLowerCase() === c.toLowerCase())
+      ) {
+        nombres.add(c);
+      }
+    });
+    return Array.from(nombres).sort();
+  }, [trasladosPadres, integrantes]);
+
+  const otrosAcompanantesRegistrados = useMemo(() => {
+    const nombres = new Set();
+    citasMedicas.forEach(c => {
+      const a = (c.acompanante || '').trim();
+      if (
+        a && 
+        a !== 'Pendiente de asignar' && 
+        a !== 'Taxi' &&
+        a !== 'Taxi / Sanitario' &&
+        !integrantes.some(i => i.nombre?.toLowerCase() === a.toLowerCase())
+      ) {
+        nombres.add(a);
+      }
+    });
+    return Array.from(nombres).sort();
+  }, [citasMedicas, integrantes]);
+
   function obtenerNombreMes(mesNum) {
     const meses = [
       'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -7779,6 +7812,15 @@ export default function App() {
                                 </option>
                               ))}
                           </optgroup>
+                          {otrosAcompanantesRegistrados.length > 0 && (
+                            <optgroup label="Otros acompañantes guardados anteriormente">
+                              {otrosAcompanantesRegistrados.map(nom => (
+                                <option key={nom} value={nom}>
+                                  ✨ {nom}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
                         </select>
                       </div>
 
@@ -7792,6 +7834,16 @@ export default function App() {
                         >
                           🚗 Tía Mariuge
                         </button>
+                        {otrosAcompanantesRegistrados.slice(0, 3).map(nom => (
+                          <button
+                            key={nom}
+                            type="button"
+                            onClick={() => setNewCita({ ...newCita, acompanante: nom })}
+                            className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full border border-amber-200 font-semibold transition flex items-center gap-1"
+                          >
+                            <span>👤</span> {nom}
+                          </button>
+                        ))}
                         <button
                           type="button"
                           onClick={() => setNewCita({ ...newCita, acompanante: 'Taxi / Sanitario' })}
@@ -8103,6 +8155,15 @@ export default function App() {
                                 </option>
                               ))}
                           </optgroup>
+                          {otrosConductoresRegistrados.length > 0 && (
+                            <optgroup label="Otros conductores guardados anteriormente">
+                              {otrosConductoresRegistrados.map(nom => (
+                                <option key={nom} value={nom}>
+                                  ✨ {nom}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
                         </select>
                       </div>
 
@@ -8116,6 +8177,16 @@ export default function App() {
                         >
                           🚗 Tía Mariuge
                         </button>
+                        {otrosConductoresRegistrados.slice(0, 3).map(nom => (
+                          <button
+                            key={nom}
+                            type="button"
+                            onClick={() => setNewTraslado({ ...newTraslado, conductor: nom })}
+                            className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full border border-amber-200 font-semibold transition flex items-center gap-1"
+                          >
+                            <span>👤</span> {nom}
+                          </button>
+                        ))}
                         <button
                           type="button"
                           onClick={() => setNewTraslado({ ...newTraslado, conductor: 'Taxi' })}
