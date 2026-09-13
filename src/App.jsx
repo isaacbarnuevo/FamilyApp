@@ -125,7 +125,7 @@ const INTEGRANTES_PREDEFINIDOS = [
   { nombre: 'Nieves', rol: 'Hijos', padres: ['Ana', 'Javier'], padrinos: [], santo: '5 Agosto', email: null, fechaNacimiento: '2012-01-25' },
   { nombre: 'Miriam', rol: 'Hijos', padres: ['Ana', 'Javier'], padrinos: [], santo: '12 de Septiembre', email: null, fechaNacimiento: '2014-11-19' },
   { nombre: 'Jaime (Hijo)', rol: 'Hijos', padres: ['Ana', 'Javier'], padrinos: [], santo: '25 de Julio', email: null, fechaNacimiento: '2013-07-04' },
-  { nombre: 'Francisco', rol: 'Hijos', padres: ['Ana', 'Javier'], padrinos: [], santo: 'No especificado', email: null, fechaNacimiento: '2016-12-01' }
+  { nombre: 'Francisco', rol: 'Hijos', padres: ['Ana', 'Javier'], padrinos: [], santo: '4 de Octubre (San Francisco de Asís)', email: null, fechaNacimiento: '2016-12-01' }
 ];
 
 const CUMPLEANOS_PREDEFINIDOS = [
@@ -148,7 +148,7 @@ const CUMPLEANOS_PREDEFINIDOS = [
   { nombre: 'Nieves', fecha: '01-25', parentesco: 'Sobrino/Hijo', santo: '5 Agosto' },
   { nombre: 'Miriam', fecha: '11-19', parentesco: 'Sobrino/Hijo', santo: '12 de Septiembre' },
   { nombre: 'Jaime (Hijo)', fecha: '07-04', parentesco: 'Sobrino/Hijo', santo: '25 de Julio' },
-  { nombre: 'Francisco', fecha: '12-01', parentesco: 'Sobrino/Hijo', santo: 'No especificado' }
+  { nombre: 'Francisco', fecha: '12-01', parentesco: 'Sobrino/Hijo', santo: '4 de Octubre (San Francisco de Asís)' }
 ];
 
 // --- FUNCIONES HELPER GLOBALES ---
@@ -1819,12 +1819,21 @@ export default function App() {
       });
     });
 
-    // B. Procesar onomásticas (santos)
+    // B. Procesar onomásticas (santos) combinando integrantes y cumpleaños
+    const santosProcesados = new Set();
+
     integrantes.forEach(miembro => {
-      if (!miembro || !miembro.nombre || !miembro.santo) return;
-      const fechaSanto = obtenerMesDiaSanto(miembro.santo);
+      if (!miembro || !miembro.nombre) return;
+      const cumpleAsociado = cumpleanos.find(c => c && c.nombre === miembro.nombre);
+      const santoTexto = (miembro.santo && !miembro.santo.toLowerCase().includes('no especificado'))
+        ? miembro.santo
+        : (cumpleAsociado && cumpleAsociado.santo && !cumpleAsociado.santo.toLowerCase().includes('no especificado') ? cumpleAsociado.santo : null);
+
+      if (!santoTexto) return;
+      const fechaSanto = obtenerMesDiaSanto(santoTexto);
       if (!fechaSanto) return;
 
+      santosProcesados.add(miembro.nombre);
       const diasFaltantes = calcularDiasRestantes(fechaSanto.mes, fechaSanto.dia);
       const parentesco = miembro.rol === 'Hermanos' ? 'Hermano/a' : miembro.rol === 'Cuñados' ? 'Cuñado/a' : miembro.rol === 'Hijos' ? 'Sobrino/Hijo' : miembro.rol;
 
@@ -1835,7 +1844,26 @@ export default function App() {
         fechaVisual: `${fechaSanto.dia} de ${obtenerNombreMes(fechaSanto.mes)}`,
         diasFaltantes,
         parentesco,
-        santoTexto: miembro.santo
+        santoTexto
+      });
+    });
+
+    cumpleanos.forEach(cumple => {
+      if (!cumple || !cumple.nombre || santosProcesados.has(cumple.nombre)) return;
+      if (!cumple.santo || cumple.santo.toLowerCase().includes('no especificado')) return;
+      const fechaSanto = obtenerMesDiaSanto(cumple.santo);
+      if (!fechaSanto) return;
+
+      santosProcesados.add(cumple.nombre);
+      const diasFaltantes = calcularDiasRestantes(fechaSanto.mes, fechaSanto.dia);
+      listado.push({
+        id: `santo-cumple-${cumple.id || cumple.nombre}`,
+        nombre: cumple.nombre,
+        tipo: '✨ Santo',
+        fechaVisual: `${fechaSanto.dia} de ${obtenerNombreMes(fechaSanto.mes)}`,
+        diasFaltantes,
+        parentesco: cumple.parentesco || 'Familiar',
+        santoTexto: cumple.santo
       });
     });
 
