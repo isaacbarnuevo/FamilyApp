@@ -7711,82 +7711,56 @@ export default function App() {
                   {/* ¿Quién le acompaña? */}
                   <div>
                     <div className="flex justify-between items-center mb-1">
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider">
                         ¿Quién le acompaña? (Acompañante)
                       </label>
-                      <div className="flex items-center gap-2">
-                        {usuarioActivo && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setCustomAcompananteMode(false);
-                              setNewCita({ ...newCita, acompanante: usuarioActivo });
-                            }}
-                            className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 hover:underline"
-                          >
-                            🚗 Yo ({usuarioActivo})
-                          </button>
-                        )}
+                      {usuarioActivo && (
                         <button
                           type="button"
-                          onClick={() => {
-                            const next = !customAcompananteMode;
-                            setCustomAcompananteMode(next);
-                            if (next && (newCita.acompanante === 'Pendiente de asignar' || integrantes.some(i => i.nombre === newCita.acompanante))) {
-                              setNewCita({ ...newCita, acompanante: '' });
-                            } else if (!next && !newCita.acompanante) {
-                              setNewCita({ ...newCita, acompanante: 'Pendiente de asignar' });
-                            }
-                          }}
-                          className="text-[10px] font-bold text-rose-600 hover:text-rose-700 hover:underline"
+                          onClick={() => setNewCita({ ...newCita, acompanante: usuarioActivo })}
+                          className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 hover:underline"
                         >
-                          {customAcompananteMode ? '👥 Lista de familia' : '✏️ Otro / Externa'}
+                          🚗 Yo ({usuarioActivo})
                         </button>
-                      </div>
+                      )}
                     </div>
 
-                    {customAcompananteMode ? (
-                      <div className="space-y-1.5">
+                    <div className="space-y-2">
+                      {/* Campo de texto libre para escribir el nombre directamente */}
+                      <div className="relative">
                         <input
                           type="text"
-                          placeholder="Nombre del acompañante (ej: Tía Mariuge, Vecino, Taxi...)"
-                          className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 font-medium outline-none focus:ring-2 focus:ring-rose-400"
+                          placeholder="Escribe aquí el nombre (ej: Carlos, Tía Mariuge, Taxi, Vecino...)..."
+                          className="w-full p-2.5 pl-8 border-2 border-rose-300 focus:border-rose-500 rounded-xl bg-white text-slate-800 font-bold outline-none focus:ring-2 focus:ring-rose-200 text-xs shadow-2xs"
                           value={newCita.acompanante === 'Pendiente de asignar' ? '' : newCita.acompanante}
                           onChange={(e) => setNewCita({ ...newCita, acompanante: e.target.value })}
                         />
-                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                          <span className="text-[10px] text-slate-400 font-medium">Sugerencias:</span>
+                        <span className="absolute left-2.5 top-2.5 text-xs text-slate-400">✏️</span>
+                        {newCita.acompanante && newCita.acompanante !== 'Pendiente de asignar' && (
                           <button
                             type="button"
-                            onClick={() => setNewCita({ ...newCita, acompanante: 'Tía Mariuge' })}
-                            className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full border border-amber-200 font-semibold"
+                            onClick={() => setNewCita({ ...newCita, acompanante: '' })}
+                            className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs font-bold px-1"
+                            title="Limpiar campo"
                           >
-                            + Tía Mariuge
+                            ✕
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setNewCita({ ...newCita, acompanante: 'Taxi / Sanitario' })}
-                            className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full border border-slate-200 font-medium"
-                          >
-                            + Taxi / Sanitario
-                          </button>
-                        </div>
+                        )}
                       </div>
-                    ) : (
-                      <div className="space-y-1.5">
+
+                      {/* Desplegable auxiliar para elegir a un familiar con 1 clic */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-500 font-bold shrink-0">O elegir de la lista:</span>
                         <select
-                          value={newCita.acompanante}
+                          value={integrantes.some(i => i.nombre === newCita.acompanante) ? newCita.acompanante : ''}
                           onChange={(e) => {
-                            if (e.target.value === '__custom__') {
-                              setCustomAcompananteMode(true);
-                              setNewCita({ ...newCita, acompanante: '' });
-                            } else {
+                            if (e.target.value) {
                               setNewCita({ ...newCita, acompanante: e.target.value });
                             }
                           }}
-                          className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 text-slate-700 font-medium outline-none focus:ring-2 focus:ring-rose-400"
+                          className="w-full p-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 text-slate-700 font-medium outline-none focus:ring-1 focus:ring-rose-400"
                         >
-                          <option value="Pendiente de asignar">⚠️ Pendiente de asignar</option>
+                          <option value="">-- Seleccionar familiar para rellenar --</option>
                           <optgroup label="Hermanos">
                             {integrantes
                               .filter(m => m.rol === 'Hermanos' || esHermano(m.nombre))
@@ -7805,20 +7779,35 @@ export default function App() {
                                 </option>
                               ))}
                           </optgroup>
-                          <option value="__custom__">✏️ Escribir otro acompañante / persona externa...</option>
                         </select>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-[10px] text-slate-400 font-medium">Rápido:</span>
-                          <button
-                            type="button"
-                            onClick={() => setNewCita({ ...newCita, acompanante: 'Tía Mariuge' })}
-                            className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full border border-amber-200 font-semibold"
-                          >
-                            + Tía Mariuge
-                          </button>
-                        </div>
                       </div>
-                    )}
+
+                      {/* Botones rápidos de 1 clic */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                        <span className="text-[10px] text-slate-400 font-medium">Atajos:</span>
+                        <button
+                          type="button"
+                          onClick={() => setNewCita({ ...newCita, acompanante: 'Tía Mariuge' })}
+                          className="text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-900 px-2.5 py-0.5 rounded-full border border-amber-300 font-bold transition flex items-center gap-1"
+                        >
+                          🚗 Tía Mariuge
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewCita({ ...newCita, acompanante: 'Taxi / Sanitario' })}
+                          className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-0.5 rounded-full border border-slate-200 font-medium transition flex items-center gap-1"
+                        >
+                          🚕 Taxi / Sanitario
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewCita({ ...newCita, acompanante: 'Pendiente de asignar' })}
+                          className="text-[10px] bg-rose-50 hover:bg-rose-100 text-rose-700 px-2.5 py-0.5 rounded-full border border-rose-200 font-medium transition"
+                        >
+                          ⚠️ Sin acompañante
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Notas o preparaciones */}
@@ -8046,82 +8035,56 @@ export default function App() {
                   {/* Conductor / ¿Quién les lleva? */}
                   <div>
                     <div className="flex justify-between items-center mb-1">
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider">
                         ¿Quién les lleva? (Conductor)
                       </label>
-                      <div className="flex items-center gap-2">
-                        {usuarioActivo && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setCustomConductorMode(false);
-                              setNewTraslado({ ...newTraslado, conductor: usuarioActivo });
-                            }}
-                            className="text-[10px] font-bold text-amber-700 hover:text-amber-800 hover:underline flex items-center gap-1"
-                          >
-                            🚗 Yo ({usuarioActivo})
-                          </button>
-                        )}
+                      {usuarioActivo && (
                         <button
                           type="button"
-                          onClick={() => {
-                            const next = !customConductorMode;
-                            setCustomConductorMode(next);
-                            if (next && (newTraslado.conductor === 'Pendiente de asignar' || integrantes.some(i => i.nombre === newTraslado.conductor))) {
-                              setNewTraslado({ ...newTraslado, conductor: '' });
-                            } else if (!next && !newTraslado.conductor) {
-                              setNewTraslado({ ...newTraslado, conductor: 'Pendiente de asignar' });
-                            }
-                          }}
-                          className="text-[10px] font-bold text-amber-700 hover:text-amber-800 hover:underline"
+                          onClick={() => setNewTraslado({ ...newTraslado, conductor: usuarioActivo })}
+                          className="text-[11px] font-bold text-amber-700 hover:text-amber-800 hover:underline flex items-center gap-1"
                         >
-                          {customConductorMode ? '👥 Lista de familia' : '✏️ Otro / Externa'}
+                          🚗 Yo ({usuarioActivo})
                         </button>
-                      </div>
+                      )}
                     </div>
 
-                    {customConductorMode ? (
-                      <div className="space-y-1.5">
+                    <div className="space-y-2">
+                      {/* Campo de texto libre para escribir el nombre directamente */}
+                      <div className="relative">
                         <input
                           type="text"
-                          placeholder="Nombre del conductor (ej: Tía Mariuge, Taxi, Vecino...)"
-                          className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 font-medium outline-none focus:ring-2 focus:ring-amber-400"
+                          placeholder="Escribe aquí el nombre (ej: Tía Mariuge, Taxi, Vecino Paco...)"
+                          className="w-full p-2.5 pl-8 border-2 border-amber-300 focus:border-amber-500 rounded-xl bg-white text-slate-800 font-bold outline-none focus:ring-2 focus:ring-amber-200 text-xs shadow-2xs"
                           value={newTraslado.conductor === 'Pendiente de asignar' ? '' : newTraslado.conductor}
                           onChange={(e) => setNewTraslado({ ...newTraslado, conductor: e.target.value })}
                         />
-                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                          <span className="text-[10px] text-slate-400 font-medium">Sugerencias:</span>
+                        <span className="absolute left-2.5 top-2.5 text-xs text-slate-400">✏️</span>
+                        {newTraslado.conductor && newTraslado.conductor !== 'Pendiente de asignar' && (
                           <button
                             type="button"
-                            onClick={() => setNewTraslado({ ...newTraslado, conductor: 'Tía Mariuge' })}
-                            className="text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full border border-amber-300 font-bold"
+                            onClick={() => setNewTraslado({ ...newTraslado, conductor: '' })}
+                            className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs font-bold px-1"
+                            title="Limpiar campo"
                           >
-                            + Tía Mariuge
+                            ✕
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setNewTraslado({ ...newTraslado, conductor: 'Taxi' })}
-                            className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full border border-slate-200 font-medium"
-                          >
-                            + Taxi
-                          </button>
-                        </div>
+                        )}
                       </div>
-                    ) : (
-                      <div className="space-y-1.5">
+
+                      {/* Desplegable auxiliar para elegir a un familiar con 1 clic */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-500 font-bold shrink-0">O elegir de la lista:</span>
                         <select
-                          value={newTraslado.conductor}
+                          value={integrantes.some(i => i.nombre === newTraslado.conductor) ? newTraslado.conductor : ''}
                           onChange={(e) => {
-                            if (e.target.value === '__custom__') {
-                              setCustomConductorMode(true);
-                              setNewTraslado({ ...newTraslado, conductor: '' });
-                            } else {
+                            if (e.target.value) {
                               setNewTraslado({ ...newTraslado, conductor: e.target.value });
                             }
                           }}
-                          className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 text-slate-700 font-medium outline-none focus:ring-2 focus:ring-amber-400"
+                          className="w-full p-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 text-slate-700 font-medium outline-none focus:ring-1 focus:ring-amber-400"
                         >
-                          <option value="Pendiente de asignar">⚠️ ¡Pendiente de asignar!</option>
+                          <option value="">-- Seleccionar familiar para rellenar --</option>
                           <optgroup label="Hermanos">
                             {integrantes
                               .filter(m => m.rol === 'Hermanos' || esHermano(m.nombre))
@@ -8140,20 +8103,35 @@ export default function App() {
                                 </option>
                               ))}
                           </optgroup>
-                          <option value="__custom__">✏️ Escribir otro conductor / persona externa...</option>
                         </select>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-[10px] text-slate-400 font-medium">Rápido:</span>
-                          <button
-                            type="button"
-                            onClick={() => setNewTraslado({ ...newTraslado, conductor: 'Tía Mariuge' })}
-                            className="text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full border border-amber-300 font-bold"
-                          >
-                            + Tía Mariuge
-                          </button>
-                        </div>
                       </div>
-                    )}
+
+                      {/* Botones rápidos de 1 clic */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                        <span className="text-[10px] text-slate-400 font-medium">Atajos:</span>
+                        <button
+                          type="button"
+                          onClick={() => setNewTraslado({ ...newTraslado, conductor: 'Tía Mariuge' })}
+                          className="text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-900 px-2.5 py-0.5 rounded-full border border-amber-300 font-bold transition flex items-center gap-1"
+                        >
+                          🚗 Tía Mariuge
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewTraslado({ ...newTraslado, conductor: 'Taxi' })}
+                          className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-0.5 rounded-full border border-slate-200 font-medium transition flex items-center gap-1"
+                        >
+                          🚕 Taxi
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewTraslado({ ...newTraslado, conductor: 'Pendiente de asignar' })}
+                          className="text-[10px] bg-rose-50 hover:bg-rose-100 text-rose-700 px-2.5 py-0.5 rounded-full border border-rose-200 font-medium transition"
+                        >
+                          ⚠️ Sin conductor
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Notas */}
