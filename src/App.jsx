@@ -548,6 +548,26 @@ const enviarMensajeTelegram = async (texto) => {
   }
 };
 
+const enviarEncuestaTelegram = async (pregunta, opciones) => {
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPoll`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: TELEGRAM_CHAT_ID,
+        question: pregunta,
+        options: opciones,
+        is_anonymous: false
+      })
+    });
+    const data = await res.json();
+    return data && data.ok;
+  } catch (err) {
+    console.error('Error al enviar encuesta a Telegram:', err);
+    return false;
+  }
+};
+
 // --- PRESELECCIONES Y UTILIDADES PARA CITAS MÉDICAS ---
 const CITAS_MEDICAS_PREDEFINIDAS = [
   {
@@ -813,6 +833,9 @@ export default function App() {
   const [editingTrasladoId, setEditingTrasladoId] = useState(null);
   const [filtroTraslado, setFiltroTraslado] = useState('todos');
   const [notifyTelegramOnTraslado, setNotifyTelegramOnTraslado] = useState(true);
+  const [pollOnTraslado, setPollOnTraslado] = useState(false);
+  const [proponiendoAlternativaTraslado, setProponiendoAlternativaTraslado] = useState(null);
+  const [nuevaOpcion, setNuevaOpcion] = useState({ conductor: '', hora: '14:00', momentoDia: 'Mediodía', notas: '' });
   const [customConductorMode, setCustomConductorMode] = useState(false);
   const [customAcompananteMode, setCustomAcompananteMode] = useState(false);
   const [newTraslado, setNewTraslado] = useState({
@@ -823,7 +846,8 @@ export default function App() {
     momentoDia: 'Tarde',
     conductor: 'Pendiente de asignar',
     notas: '',
-    estado: 'pendiente'
+    estado: 'pendiente',
+    opciones: []
   });
 
   const [showMemberModal, setShowMemberModal] = useState(false);
@@ -3102,8 +3126,10 @@ export default function App() {
       momentoDia: 'Tarde',
       conductor: 'Pendiente de asignar',
       notas: '',
-      estado: 'pendiente'
+      estado: 'pendiente',
+      opciones: []
     });
+    setPollOnTraslado(false);
     setShowTrasladoModal(false);
     setIsEditingTraslado(false);
     setEditingTrasladoId(null);
@@ -3117,15 +3143,33 @@ export default function App() {
       return;
     }
 
+    let opcionesFinales = (newTraslado.opciones || []).filter(o => (o.conductor || '').trim() || (o.hora || '').trim());
+    let conductorFinal = (newTraslado.conductor || '').trim() || 'Pendiente de asignar';
+    let horaFinal = newTraslado.hora || '18:00';
+    let momentoDiaFinal = newTraslado.momentoDia || 'Tarde';
+
+    if (opcionesFinales.length > 0) {
+      if (!opcionesFinales.some(o => o.esElegida)) {
+        opcionesFinales[0].esElegida = true;
+      }
+      const optElegida = opcionesFinales.find(o => o.esElegida) || opcionesFinales[0];
+      if (optElegida && optElegida.conductor) {
+        conductorFinal = optElegida.conductor;
+        horaFinal = optElegida.hora || horaFinal;
+        momentoDiaFinal = optElegida.momentoDia || momentoDiaFinal;
+      }
+    }
+
     const trasladoData = {
       origen: newTraslado.origen,
       destino: newTraslado.destino,
       fecha: newTraslado.fecha,
-      hora: newTraslado.hora || '18:00',
-      momentoDia: newTraslado.momentoDia || 'Tarde',
-      conductor: newTraslado.conductor || 'Pendiente de asignar',
+      hora: horaFinal,
+      momentoDia: momentoDiaFinal,
+      conductor: conductorFinal,
       notas: newTraslado.notas || '',
       estado: newTraslado.estado || 'pendiente',
+      opciones: opcionesFinales,
       actualizadoPor: usuarioActivo
     };
 
@@ -3147,13 +3191,25 @@ export default function App() {
           const accionTxt = isEditingTraslado ? 'actualizado' : 'programado';
           const sinConductor = !trasladoData.conductor || trasladoData.conductor === 'Pendiente de asignar';
           const emojiAlerta = sinConductor ? '⚠️' : '🚗';
+          let textoOpciones = '';
+          if (opcionesFinales.length > 1) {
+            textoOpciones = `\n💡 <b>Opciones propuestas para los padres:</b>\n` +
+              opcionesFinales.map((o, idx) => `  ${idx + 1}. <b>${o.conductor}</b> a las ${o.hora}${o.esElegida ? ' ⭐ (Elegida)' : ''}`).join('\n');
+          }
           const msgTg = `${emojiAlerta} <b>Traslado de los Padres ${accionTxt}</b>\n\n` +
             `📍 <b>Ruta:</b> ${trasladoData.origen} ➔ ${trasladoData.destino}\n` +
             `📅 <b>Fecha:</b> ${formatearFechaStr(trasladoData.fecha)} (${trasladoData.hora || trasladoData.momentoDia})\n` +
-            `👤 <b>Conductor:</b> ${sinConductor ? '⚠️ <b>¡Pendiente de asignar! ¿Quién les lleva?</b>' : trasladoData.conductor}\n` +
+            `👤 <b>Conductor:</b> ${sinConductor ? '⚠️ <b>¡Pendiente de asignar! ¿Quién les lleva?</b>' : trasladoData.conductor}` +
+            `${textoOpciones}\n` +
             (trasladoData.notas ? `📋 <b>Notas:</b> <i>${trasladoData.notas}</i>\n` : '') +
-            `\n👉 <a href="https://familiabarnuevoapp.web.app">Abrir App para ofrecerse o ver detalles</a>`;
+            `\n👉 <a href="https://familiabarnuevoapp.web.app">Abrir App para elegir preferencia o ver detalles</a>`;
           enviarMensajeTelegram(msgTg);
+        }
+
+        if (pollOnTraslado && opcionesFinales.length >= 2) {
+          const pollOpts = opcionesFinales.map((o, idx) => `${o.conductor || `Opción ${idx + 1}`} (${o.hora || 'horario a convenir'})`);
+          const preg = `🚗 Traslado ${trasladoData.origen} ➔ ${trasladoData.destino} (${formatearFechaStr(trasladoData.fecha)}): ¿Qué opción prefieren Papá y Mamá?`;
+          enviarEncuestaTelegram(preg, pollOpts);
         }
 
         resetTrasladoForm();
@@ -3173,6 +3229,13 @@ export default function App() {
         persistLocal('trasladosPadres', updated);
         triggerToast('🚗 Traslado guardado localmente');
       }
+
+      if (pollOnTraslado && opcionesFinales.length >= 2) {
+        const pollOpts = opcionesFinales.map((o, idx) => `${o.conductor || `Opción ${idx + 1}`} (${o.hora || 'horario a convenir'})`);
+        const preg = `🚗 Traslado ${trasladoData.origen} ➔ ${trasladoData.destino} (${formatearFechaStr(trasladoData.fecha)}): ¿Qué opción prefieren Papá y Mamá?`;
+        enviarEncuestaTelegram(preg, pollOpts);
+      }
+
       resetTrasladoForm();
     }
   };
@@ -3187,13 +3250,126 @@ export default function App() {
       momentoDia: traslado.momentoDia || 'Tarde',
       conductor: traslado.conductor || 'Pendiente de asignar',
       notas: traslado.notas || '',
-      estado: traslado.estado || 'pendiente'
+      estado: traslado.estado || 'pendiente',
+      opciones: traslado.opciones ? [...traslado.opciones] : []
     });
+    setPollOnTraslado(false);
     setEditingTrasladoId(traslado.id);
     setIsEditingTraslado(true);
     const esConocido = !traslado.conductor || traslado.conductor === 'Pendiente de asignar' || integrantes.some(i => i.nombre === traslado.conductor);
     setCustomConductorMode(!esConocido);
     setShowTrasladoModal(true);
+  };
+
+  const handleElegirOpcionTraslado = async (traslado, opcionId) => {
+    if (!traslado || !traslado.opciones) return;
+    const optSeleccionada = traslado.opciones.find(o => o.id === opcionId);
+    if (!optSeleccionada) return;
+
+    const nuevasOpciones = traslado.opciones.map(o => ({
+      ...o,
+      esElegida: o.id === opcionId
+    }));
+
+    const updatedData = {
+      conductor: optSeleccionada.conductor || traslado.conductor,
+      hora: optSeleccionada.hora || traslado.hora,
+      momentoDia: optSeleccionada.momentoDia || traslado.momentoDia || 'Tarde',
+      opciones: nuevasOpciones,
+      actualizadoPor: usuarioActivo
+    };
+
+    const isLocal = typeof traslado.id === 'string' && traslado.id.startsWith('tras_');
+    if (isCloudMode && user && !isLocalMode && !isLocal) {
+      try {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'trasladosPadres', traslado.id), updatedData);
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      const updated = trasladosPadres.map(t => t.id === traslado.id ? { ...t, ...updatedData } : t);
+      setTrasladosPadres(updated);
+      persistLocal('trasladosPadres', updated);
+    }
+
+    triggerToast(`⭐ Opción elegida: ${optSeleccionada.conductor} a las ${optSeleccionada.hora}`);
+    enviarMensajeTelegram(
+      `⭐ <b>Preferencia de los Padres:</b> Para el traslado <b>${traslado.origen} ➔ ${traslado.destino}</b> (${formatearFechaStr(traslado.fecha)}), Papá y Mamá han elegido la opción de <b>${optSeleccionada.conductor} a las ${optSeleccionada.hora}</b>.`
+    );
+  };
+
+  const handleLanzarEncuestaTelegram = async (traslado) => {
+    if (!traslado) return;
+    const opciones = traslado.opciones && traslado.opciones.length >= 2
+      ? traslado.opciones.map((o, idx) => `${o.conductor || `Opción ${idx + 1}`} (${o.hora || 'hora a concretar'})`)
+      : (traslado.conductor && traslado.conductor !== 'Pendiente de asignar' ? [`${traslado.conductor} (${traslado.hora})`, 'Otra alternativa por definir'] : []);
+
+    if (opciones.length < 2) {
+      triggerToast('Añade al menos 2 opciones de viaje para crear la encuesta.');
+      return;
+    }
+
+    const preg = `🚗 Traslado ${traslado.origen} ➔ ${traslado.destino} (${formatearFechaStr(traslado.fecha)}): ¿Qué opción prefieren Papá y Mamá?`;
+    triggerToast('Enviando encuesta al grupo de Telegram (Laos)...');
+    const ok = await enviarEncuestaTelegram(preg, opciones);
+    if (ok) {
+      triggerToast('📊 ¡Encuesta enviada con éxito a Telegram (Laos)!');
+    } else {
+      triggerToast('⚠️ No se pudo enviar la encuesta a Telegram.');
+    }
+  };
+
+  const handleGuardarNuevaAlternativa = async (e) => {
+    e.preventDefault();
+    if (!proponiendoAlternativaTraslado) return;
+    const cond = (nuevaOpcion.conductor || '').trim();
+    if (!cond) {
+      triggerToast('Escribe el nombre del conductor que propone la alternativa.');
+      return;
+    }
+
+    const traslado = proponiendoAlternativaTraslado;
+    let opcionesActuales = traslado.opciones && traslado.opciones.length > 0
+      ? [...traslado.opciones]
+      : (traslado.conductor && traslado.conductor !== 'Pendiente de asignar'
+          ? [{ id: 'opt_' + Date.now(), conductor: traslado.conductor, hora: traslado.hora || '18:00', momentoDia: traslado.momentoDia || 'Tarde', notas: traslado.notas || '', esElegida: true }]
+          : []);
+
+    const nueva = {
+      id: 'opt_' + (Date.now() + 1),
+      conductor: cond,
+      hora: nuevaOpcion.hora || '14:00',
+      momentoDia: nuevaOpcion.momentoDia || 'Mediodía',
+      notas: nuevaOpcion.notas || '',
+      esElegida: opcionesActuales.length === 0
+    };
+
+    const opcionesFinales = [...opcionesActuales, nueva];
+    const updatedData = {
+      opciones: opcionesFinales,
+      actualizadoPor: usuarioActivo
+    };
+
+    const isLocal = typeof traslado.id === 'string' && traslado.id.startsWith('tras_');
+    if (isCloudMode && user && !isLocalMode && !isLocal) {
+      try {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'trasladosPadres', traslado.id), updatedData);
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      const updated = trasladosPadres.map(t => t.id === traslado.id ? { ...t, ...updatedData } : t);
+      setTrasladosPadres(updated);
+      persistLocal('trasladosPadres', updated);
+    }
+
+    triggerToast(`💡 ¡Nueva opción de ${cond} añadida al traslado!`);
+    enviarMensajeTelegram(
+      `💡 <b>Nueva opción de traslado propuesta:</b> <b>${cond}</b> se ofrece para llevar a los padres a las <b>${nuevaOpcion.hora}</b> en el viaje <b>${traslado.origen} ➔ ${traslado.destino}</b> (${formatearFechaStr(traslado.fecha)}).\n\n👉 <a href="https://familiabarnuevoapp.web.app">Abrir App para elegir la preferencia de los padres</a>`
+    );
+
+    setProponiendoAlternativaTraslado(null);
+    setNuevaOpcion({ conductor: '', hora: '14:00', momentoDia: 'Mediodía', notas: '' });
   };
 
   const handleDeleteTraslado = async (trasladoId) => {
@@ -6691,11 +6867,76 @@ export default function App() {
                                       </button>
                                     )}
                                   </div>
+
+                                  {/* Opciones / Alternativas de Horario y Conductor */}
+                                  {traslado.opciones && traslado.opciones.length > 0 && (
+                                    <div className="mt-3 p-3 bg-amber-50/50 rounded-2xl border border-amber-200/80 space-y-2">
+                                      <div className="flex items-center justify-between gap-1 flex-wrap">
+                                        <span className="text-[10px] uppercase font-black tracking-wider text-amber-900 flex items-center gap-1">
+                                          <span>💡</span> Opciones de Traslado ({traslado.opciones.length})
+                                        </span>
+                                        {traslado.opciones.length >= 2 && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleLanzarEncuestaTelegram(traslado)}
+                                            className="text-[10px] font-bold text-sky-700 bg-sky-100 hover:bg-sky-200 px-2 py-0.5 rounded-lg border border-sky-300 transition flex items-center gap-1 shadow-3xs"
+                                            title="Lanzar encuesta para votar en Telegram"
+                                          >
+                                            <span>📊</span> Encuesta Telegram
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      <div className="space-y-1.5">
+                                        {traslado.opciones.map((op, oIdx) => {
+                                          const esElegida = op.esElegida || (!traslado.opciones.some(x => x.esElegida) && oIdx === 0);
+                                          return (
+                                            <div
+                                              key={op.id || oIdx}
+                                              className={`p-2 rounded-xl text-xs flex items-center justify-between gap-2 border transition ${
+                                                esElegida
+                                                  ? 'bg-amber-100/80 border-amber-400 font-bold text-amber-950 shadow-3xs'
+                                                  : 'bg-white border-slate-200/90 text-slate-700 hover:border-amber-300'
+                                              }`}
+                                            >
+                                              <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span className="text-xs">🚗</span>
+                                                <span className="font-extrabold text-slate-900">{op.conductor || 'Sin definir'}</span>
+                                                <span className="text-[11px] text-slate-500 font-medium">({op.hora || '18:00'} • {op.momentoDia || 'Tarde'})</span>
+                                                {op.notas && (
+                                                  <span className="text-[10px] text-amber-800 italic bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-200/60">
+                                                    {op.notas}
+                                                  </span>
+                                                )}
+                                              </div>
+
+                                              <div>
+                                                {esElegida ? (
+                                                  <span className="text-[10px] font-black bg-amber-500 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow-3xs">
+                                                    ⭐ Preferencia de Padres
+                                                  </span>
+                                                ) : !esRealizado ? (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleElegirOpcionTraslado(traslado, op.id)}
+                                                    className="text-[10px] font-bold text-amber-900 bg-white hover:bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-lg transition shadow-3xs"
+                                                    title="Seleccionar esta opción como la elegida por los padres"
+                                                  >
+                                                    ⭐ Elegir preferencia
+                                                  </button>
+                                                ) : null}
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
 
                                 {/* Acciones de la tarjeta */}
                                 <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-                                  <div className="flex items-center gap-1.5">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
                                     <a
                                       href={generateGoogleCalendarUrlForTraslado(traslado)}
                                       target="_blank"
@@ -6705,6 +6946,24 @@ export default function App() {
                                     >
                                       <CalendarIcon className="w-3 h-3 text-blue-600" /> +Calendar
                                     </a>
+
+                                    {!esRealizado && (
+                                      <button
+                                        onClick={() => {
+                                          setNuevaOpcion({
+                                            conductor: (usuarioActivo && usuarioActivo !== 'Invitado') ? usuarioActivo : '',
+                                            hora: '14:00',
+                                            momentoDia: 'Mediodía',
+                                            notas: ''
+                                          });
+                                          setProponiendoAlternativaTraslado(traslado);
+                                        }}
+                                        className="text-[10px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 px-2.5 py-1.5 rounded-xl transition flex items-center gap-1 shadow-3xs"
+                                        title="Proponer otro horario o conductor alternativo"
+                                      >
+                                        <span>💡</span> + Proponer Opción
+                                      </button>
+                                    )}
 
                                     <button
                                       onClick={() => handleToggleEstadoTraslado(traslado)}
@@ -8658,6 +8917,142 @@ export default function App() {
                     />
                   </div>
 
+                  {/* Opciones alternativas de Horario / Conductor para dar a elegir a los padres */}
+                  <div className="bg-amber-50/60 border border-amber-200/90 rounded-2xl p-3.5 space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div>
+                        <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                          <span>💡</span> Alternativas de Horario o Conductor
+                        </h4>
+                        <p className="text-[10px] text-slate-500 font-medium">
+                          Propón distintas opciones (ej: Mariuge 12:00h o Rebe 14:00h) para que Papá y Mamá elijan su preferencia.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentOpts = newTraslado.opciones && newTraslado.opciones.length > 0
+                            ? [...newTraslado.opciones]
+                            : (newTraslado.conductor && newTraslado.conductor !== 'Pendiente de asignar'
+                                ? [{ id: 'opt_' + Date.now(), conductor: newTraslado.conductor, hora: newTraslado.hora || '18:00', momentoDia: newTraslado.momentoDia || 'Tarde', notas: '', esElegida: true }]
+                                : [{ id: 'opt_' + Date.now(), conductor: 'Mariuge', hora: '12:00', momentoDia: 'Mediodía', notas: '', esElegida: true }]);
+                          setNewTraslado({
+                            ...newTraslado,
+                            opciones: [
+                              ...currentOpts,
+                              { id: 'opt_' + (Date.now() + 1), conductor: '', hora: '14:00', momentoDia: 'Mediodía', notas: '', esElegida: false }
+                            ]
+                          });
+                        }}
+                        className="text-[11px] font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 px-3 py-1 rounded-xl transition border border-amber-300 flex items-center gap-1 shadow-2xs"
+                      >
+                        <span>+</span> Añadir Otra Opción
+                      </button>
+                    </div>
+
+                    {newTraslado.opciones && newTraslado.opciones.length > 0 && (
+                      <div className="space-y-2.5 pt-1">
+                        {newTraslado.opciones.map((opt, idx) => (
+                          <div key={opt.id || idx} className={`p-3 rounded-xl border transition ${opt.esElegida ? 'bg-white border-amber-400 ring-2 ring-amber-200 shadow-2xs' : 'bg-white/80 border-slate-200'}`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-[11px] font-black text-slate-800 flex items-center gap-1">
+                                <span>🚗</span> Opción {idx + 1}
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updatedOpts = newTraslado.opciones.map((o, i) => ({
+                                      ...o,
+                                      esElegida: i === idx
+                                    }));
+                                    setNewTraslado({
+                                      ...newTraslado,
+                                      conductor: opt.conductor || newTraslado.conductor,
+                                      hora: opt.hora || newTraslado.hora,
+                                      opciones: updatedOpts
+                                    });
+                                  }}
+                                  className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border transition ${
+                                    opt.esElegida
+                                      ? 'bg-amber-500 text-white border-amber-600 shadow-3xs'
+                                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200'
+                                  }`}
+                                >
+                                  {opt.esElegida ? '⭐ Preferida' : 'Marcar preferida'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const filtered = newTraslado.opciones.filter((_, i) => i !== idx);
+                                    setNewTraslado({ ...newTraslado, opciones: filtered });
+                                  }}
+                                  className="text-slate-400 hover:text-rose-600 text-xs px-1 font-bold"
+                                  title="Eliminar opción"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Conductor</label>
+                                <input
+                                  type="text"
+                                  placeholder="Nombre (ej: Mariuge, Rebe...)"
+                                  className="w-full p-1.5 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-amber-400 bg-white"
+                                  value={opt.conductor}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    const updatedOpts = newTraslado.opciones.map((o, i) => i === idx ? { ...o, conductor: val } : o);
+                                    setNewTraslado({
+                                      ...newTraslado,
+                                      conductor: opt.esElegida ? val : newTraslado.conductor,
+                                      opciones: updatedOpts
+                                    });
+                                  }}
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Hora (aprox)</label>
+                                <input
+                                  type="time"
+                                  className="w-full p-1.5 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-amber-400 bg-white"
+                                  value={opt.hora}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    const updatedOpts = newTraslado.opciones.map((o, i) => i === idx ? { ...o, hora: val } : o);
+                                    setNewTraslado({
+                                      ...newTraslado,
+                                      hora: opt.esElegida ? val : newTraslado.hora,
+                                      opciones: updatedOpts
+                                    });
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {newTraslado.opciones && newTraslado.opciones.length >= 2 && (
+                      <div className="bg-sky-50 border border-sky-200 p-2 rounded-xl mt-2">
+                        <label className="flex items-center gap-2 cursor-pointer text-slate-700">
+                          <input
+                            type="checkbox"
+                            className="rounded text-sky-600 focus:ring-sky-500 w-4 h-4 cursor-pointer"
+                            checked={pollOnTraslado}
+                            onChange={(e) => setPollOnTraslado(e.target.checked)}
+                          />
+                          <span className="text-[11px] font-bold text-sky-900 flex items-center gap-1.5">
+                            <span>📊</span> Crear encuesta en Telegram (Laos) para que voten los padres y la familia
+                          </span>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Estado si está editando */}
                   {isEditingTraslado && (
                     <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex items-center justify-between">
@@ -8719,6 +9114,149 @@ export default function App() {
                     >
                       <Check className="w-4 h-4" />
                       {isEditingTraslado ? 'Guardar Cambios' : 'Guardar Traslado'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Modal para Proponer Alternativa de Horario / Conductor a un Traslado Existente */}
+          {proponiendoAlternativaTraslado && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+              <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-150">
+                <div className="flex justify-between items-start border-b border-slate-150 pb-3">
+                  <div>
+                    <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-2">
+                      <span>💡</span> Proponer Otra Opción / Horario
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                      {proponiendoAlternativaTraslado.origen} ➔ {proponiendoAlternativaTraslado.destino} ({formatearFechaStr(proponiendoAlternativaTraslado.fecha)})
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setProponiendoAlternativaTraslado(null)}
+                    className="p-1 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+                  >
+                    <XCircle className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleGuardarNuevaAlternativa} className="space-y-3.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      ¿Quién propone llevarles? (Conductor)
+                    </label>
+                    <div className="space-y-2">
+                      <select
+                        value={nuevaOpcion.conductor}
+                        onChange={(e) => setNuevaOpcion({ ...nuevaOpcion, conductor: e.target.value })}
+                        className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50 text-slate-800 font-bold text-xs outline-none focus:ring-2 focus:ring-amber-400"
+                        required
+                      >
+                        <option value="">-- Selecciona un familiar --</option>
+                        <optgroup label="Hermanos">
+                          {integrantes
+                            .filter(m => m.rol === 'Hermanos' || esHermano(m.nombre))
+                            .map(m => (
+                              <option key={m.id || m.nombre} value={m.nombre}>
+                                🚗 {m.nombre}
+                              </option>
+                            ))}
+                        </optgroup>
+                        <optgroup label="Familiares y Allegados">
+                          {integrantes
+                            .filter(m => m.rol !== 'Hermanos' && !esHermano(m.nombre) && m.nombre !== 'Encarnación' && m.nombre !== 'Jaime')
+                            .map(m => (
+                              <option key={m.id || m.nombre} value={m.nombre}>
+                                👤 {m.nombre}
+                              </option>
+                            ))}
+                        </optgroup>
+                        {otrosConductoresRegistrados.length > 0 && (
+                          <optgroup label="Otros conductores conocidos">
+                            {otrosConductoresRegistrados.map(nom => (
+                              <option key={nom} value={nom}>
+                                ✨ {nom}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </select>
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-400 font-medium">O escribe otro:</span>
+                        <input
+                          type="text"
+                          placeholder="Nombre personalizado..."
+                          value={nuevaOpcion.conductor}
+                          onChange={(e) => setNuevaOpcion({ ...nuevaOpcion, conductor: e.target.value })}
+                          className="flex-1 p-1.5 border border-slate-200 rounded-lg text-xs outline-none focus:ring-1 focus:ring-amber-400"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                        Hora Propuesta
+                      </label>
+                      <input
+                        type="time"
+                        value={nuevaOpcion.hora}
+                        onChange={(e) => setNuevaOpcion({ ...nuevaOpcion, hora: e.target.value })}
+                        className="w-full p-2.5 border border-slate-200 rounded-xl text-slate-800 font-bold text-xs outline-none focus:ring-2 focus:ring-amber-400"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                        Franja del Día
+                      </label>
+                      <select
+                        value={nuevaOpcion.momentoDia}
+                        onChange={(e) => setNuevaOpcion({ ...nuevaOpcion, momentoDia: e.target.value })}
+                        className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-slate-800 font-bold text-xs outline-none focus:ring-2 focus:ring-amber-400"
+                      >
+                        <option value="Mañana">Mañana</option>
+                        <option value="Mediodía">Mediodía</option>
+                        <option value="Tarde">Tarde</option>
+                        <option value="Noche">Noche</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Comentario o Matiz (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ej: Salgo de trabajar a las 13:30 y llego a las 14:00"
+                      value={nuevaOpcion.notas}
+                      onChange={(e) => setNuevaOpcion({ ...nuevaOpcion, notas: e.target.value })}
+                      className="w-full p-2.5 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                  </div>
+
+                  <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200/80 text-[11px] text-amber-900 leading-tight">
+                    💡 Al guardar, esta alternativa se añadirá al traslado para que Papá y Mamá puedan elegirla como su preferencia o se vote en el grupo.
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setProponiendoAlternativaTraslado(null)}
+                      className="text-xs font-semibold px-4 py-2 text-slate-500 hover:text-slate-700 transition"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-md transition duration-200 flex items-center gap-1.5"
+                    >
+                      <Check className="w-4 h-4" /> Proponer Opción
                     </button>
                   </div>
                 </form>
