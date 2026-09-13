@@ -1,0 +1,27 @@
+name: FamilyApp Daily Telegram Digest
+
+on:
+  schedule:
+    # 05:00 UTC = 07:00 AM hora peninsular española (Verano CEST / UTC+2)
+    - cron: '0 5 * * *'
+    # 06:00 UTC = 07:00 AM hora peninsular española (Invierno CET / UTC+1)
+    - cron: '0 6 * * *'
+  workflow_dispatch: # Permite probarlo o lanzarlo manualmente desde la pestaña Actions de GitHub
+
+jobs:
+  daily-digest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar dependencias
+        run: npm install --production
+
+      - name: Ejecutar comprobación matutina y aviso a Telegram
+        run: node scripts/telegram_daily_cron.mjs

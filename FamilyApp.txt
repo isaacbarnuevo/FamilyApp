@@ -1,0 +1,1673 @@
+```react
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, 
+  signInWithCustomToken, 
+  signInAnonymously, 
+  onAuthStateChanged 
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  onSnapshot, 
+  getDocs 
+} from 'firebase/firestore';
+import {
+  Calendar as CalendarIcon,
+  Users,
+  MapPin,
+  Gift,
+  Plus,
+  Trash2,
+  Edit2,
+  Check,
+  MessageSquare,
+  AlertCircle,
+  Sparkles,
+  Clock,
+  Sun,
+  Home,
+  ChevronRight,
+  ChevronLeft,
+  Heart,
+  UserPlus,
+  Wifi,
+  ExternalLink,
+  Map,
+  BellRing,
+  XCircle,
+  Baby,
+  Smile,
+  FileText,
+  Printer,
+  ChevronDown,
+  BookOpen
+} from 'lucide-react';
+
+// --- CONFIGURACIÓN DE FIREBASE EN LA NUBE CON SALVAGUARDA ---
+const firebaseConfig = (typeof __firebase_config !== 'undefined' && __firebase_config) ? JSON.parse(__firebase_config) : {};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'family-app-cloud';
+
+// Datos de semilla con Santos incorporados
+const INTEGRANTES_PREDEFINIDOS = [
+  { nombre: 'Mamá', rol: 'Padres', santo: '15 de Agosto (Santa María)' },
+  { nombre: 'Papá', rol: 'Padres', santo: '19 de Marzo (San José)' },
+  { nombre: 'Rebeca', rol: 'Hermanos', parejaDe: 'Bartek', santo: '30 de Agosto (Santa Rebeca)' },
+  { nombre: 'Isaac (Isaki)', rol: 'Hermanos', parejaDe: 'Mónica', santo: '3 de Junio (San Isaac)' },
+  { nombre: 'Mónica', rol: 'Cuñados', parejaDe: 'Isaac (Isaki)', santo: '27 de Agosto (Santa Mónica)' },
+  { nombre: 'María', rol: 'Hermanos', santo: '12 de Septiembre (Dulce Nombre de María)' },
+  { nombre: 'Bartek', rol: 'Cuñados', parejaDe: 'Rebeca', santo: '24 de Agosto (San Bartolomé)' },
+  { nombre: 'Javier', rol: 'Hermanos', santo: '3 de Diciembre (San Francisco Javier)' },
+  { nombre: 'Sofía', rol: 'Hermanos', santo: '18 de Septiembre (Santa Sofía)' },
+  { nombre: 'Carlos', rol: 'Hermanos', santo: '4 de Noviembre (San Carlos Borromeo)' },
+  { nombre: 'Laura', rol: 'Cuñados', santo: '1 de Junio (Santa Laura)' },
+  { nombre: 'Lucas', rol: 'Hijos', padres: ['Isaac (Isaki)', 'Mónica'], padrinos: ['Rebeca'], santo: '18 de Octubre (San Lucas)' },
+  { nombre: 'Elena', rol: 'Hijos', padres: ['Rebeca', 'Bartek'], padrinos: ['Isaac (Isaki)'], santo: '18 de Agosto (Santa Elena)' }
+];
+
+const CUMPLEANOS_PREDEFINIDOS = [
+  { nombre: 'Mamá', fecha: '11-12', parentesco: 'Mamá' },
+  { nombre: 'Papá', fecha: '04-25', parentesco: 'Papá' },
+  { nombre: 'Rebeca', fecha: '09-15', parentesco: 'Hermana' },
+  { nombre: 'Isaac', fecha: '07-02', parentesco: 'Hermano' },
+  { nombre: 'Mónica', fecha: '03-10', parentesco: 'Cuñada' },
+  { nombre: 'María', fecha: '10-22', parentesco: 'Hermana' },
+  { nombre: 'Bartek', fecha: '01-15', parentesco: 'Cuñado' },
+  { nombre: 'Lucas', fecha: '05-12', parentesco: 'Sobrino/Hijo' },
+  { nombre: 'Elena', fecha: '08-20', parentesco: 'Sobrina/Hijo' }
+];
+
+export default function App() {
+  // --- ESTADOS DEL SISTEMA ---
+  const [user, setUser] = useState(null);
+  const [activeTab, setActiveTab] = useState('inicio');
+  const [loading, setLoading] = useState(true);
+  const [toastMessage, setToastMessage] = useState(null);
+
+  // --- PERSPECTIVA DE USUARIO ACTIVO ("¿Quién eres tú?") ---
+  const [usuarioActivo, setUsuarioActivo] = useState('Isaac (Isaki)');
+
+  // --- ESTADOS DE DATOS SINCRONIZADOS ---
+  const [integrantes, setIntegrantes] = useState([]);
+  const [vacaciones, setVacaciones] = useState([]);
+  const [eventos, setEventos] = useState([]);
+  const [cumpleanos, setCumpleanos] = useState([]);
+  const [ideas, setIdeas] = useState([]);
+
+  // --- ESTADOS DE SELECCIÓN DE CALENDARIO VISUAL ---
+  const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date(2026, 7, 1)); // Agosto 2026
+
+  // --- ESTADOS DE FORMULARIOS ---
+  const [showVacationModal, setShowVacationModal] = useState(false);
+  const [showConfirmResetModal, setShowConfirmResetModal] = useState(false); 
+  const [newVacation, setNewVacation] = useState({
+    lugar: '',
+    ubicacionUrl: '',
+    fechaInicio: '',
+    fechaFin: '',
+    quienes: [],
+    nota: ''
+  });
+
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [newEvent, setNewEvent] = useState({
+    titulo: '',
+    fecha: '',
+    hora: '',
+    lugar: '',
+    ubicacionUrl: '',
+    descripcion: '',
+    asistentes: []
+  });
+
+  const [showCumpleModal, setShowCumpleModal] = useState(false);
+  const [isEditingCumple, setIsEditingCumple] = useState(false);
+  const [editingCumpleId, setEditingCumpleId] = useState(null);
+  const [newCumple, setNewCumple] = useState({
+    nombre: '',
+    dia: '01',
+    mes: '01',
+    parentesco: 'Hermano'
+  });
+
+  const [newIdeaText, setNewIdeaText] = useState('');
+  const [newIdeaAuthor, setNewIdeaAuthor] = useState('');
+
+  const [showMemberModal, setShowMemberModal] = useState(false);
+  const [newMember, setNewMember] = useState({
+    nombre: '',
+    rol: 'Hermanos',
+    parejaDe: '',
+    padre1: '',
+    padre2: '',
+    padrinoMadrina: '',
+    santo: ''
+  });
+
+  // Estado para controlar la impresión/exportación limpia
+  const [isExporting, setIsExporting] = useState(false);
+
+  const triggerToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 4000);
+  };
+
+  // --- 1. AUTENTICACIÓN (RULE 3) ---
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (error) {
+        console.error("Error al autenticar:", error);
+        triggerToast("Iniciando sesión segura en la nube...");
+      }
+    };
+    initAuth();
+    
+    const unsubscribe = onAuthStateChanged(auth, (loggedUser) => {
+      setUser(loggedUser);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // --- 2. CARGA Y SEMILLA DE FIREBASE (RULE 1 & RULE 2) ---
+  useEffect(() => {
+    if (!user) return;
+
+    const colMiembros = collection(db, 'artifacts', appId, 'public', 'data', 'miembros');
+    const colVacaciones = collection(db, 'artifacts', appId, 'public', 'data', 'vacaciones');
+    const colEventos = collection(db, 'artifacts', appId, 'public', 'data', 'eventos');
+    const colCumples = collection(db, 'artifacts', appId, 'public', 'data', 'cumpleanos');
+    const colIdeas = collection(db, 'artifacts', appId, 'public', 'data', 'ideas');
+
+    const sembrarDatosSiVacios = async () => {
+      try {
+        const snapMiembros = await getDocs(colMiembros);
+        if (snapMiembros.empty) {
+          for (const integrante of INTEGRANTES_PREDEFINIDOS) {
+            await addDoc(colMiembros, integrante);
+          }
+          for (const cumple of CUMPLEANOS_PREDEFINIDOS) {
+            await addDoc(colCumples, cumple);
+          }
+          await addDoc(colVacaciones, {
+            lugar: 'Sevilla',
+            ubicacionUrl: 'https://www.google.com/maps/search/?api=1&query=Sevilla',
+            fechaInicio: '2026-08-01',
+            fechaFin: '2026-08-15',
+            quienes: ['Isaac (Isaki)', 'Mónica'],
+            nota: 'Primera quincena disfrutando de Sevilla en familia.'
+          });
+          await addDoc(colVacaciones, {
+            lugar: 'Chiclana de la Frontera',
+            ubicacionUrl: 'https://www.google.com/maps/search/?api=1&query=Chiclana+de+la+Frontera',
+            fechaInicio: '2026-08-16',
+            fechaFin: '2026-08-30',
+            quienes: ['María', 'Bartek', 'Lucas'],
+            nota: 'Segunda quincena playera en Chiclana.'
+          });
+          await addDoc(colVacaciones, {
+            lugar: 'Munibáñez',
+            ubicacionUrl: 'https://www.google.com/maps/search/?api=1&query=Munibañez',
+            fechaInicio: '2026-08-10',
+            fechaFin: '2026-08-14',
+            quienes: ['Mamá', 'Papá', 'Rebeca', 'Isaac (Isaki)', 'Mónica', 'María', 'Bartek', 'Javier', 'Sofía', 'Carlos', 'Lucas', 'Elena'],
+            nota: 'Reunión anual con barbacoa.'
+          });
+
+          await addDoc(colEventos, {
+            titulo: 'Comida familiar de Domingo en la Ribera',
+            fecha: '2026-06-14',
+            hora: '14:30',
+            lugar: 'La Ribera',
+            ubicacionUrl: 'https://www.google.com/maps/search/?api=1&query=La+Ribera',
+            descripcion: 'Para planear las maletas de agosto.',
+            asistentes: ['Mamá', 'Papá', 'Rebeca', 'Isaac (Isaki)', 'Mónica']
+          });
+
+          await addDoc(colIdeas, {
+            autor: 'Isaac (Isaki)',
+            texto: 'Imprimir el calendario de vacaciones en Munibáñez para colgarlo en el salón.',
+            votos: 12
+          });
+        }
+      } catch (err) {
+        console.error("Error sembrando datos:", err);
+      }
+    };
+
+    sembrarDatosSiVacios();
+
+    const unsubMiembros = onSnapshot(colMiembros, (snapshot) => {
+      setIntegrantes(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => console.error(err));
+
+    const unsubVacaciones = onSnapshot(colVacaciones, (snapshot) => {
+      setVacaciones(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLoading(false);
+    }, (err) => console.error(err));
+
+    const unsubEventos = onSnapshot(colEventos, (snapshot) => {
+      setEventos(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => console.error(err));
+
+    const unsubCumples = onSnapshot(colCumples, (snapshot) => {
+      setCumpleanos(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => console.error(err));
+
+    const unsubIdeas = onSnapshot(colIdeas, (snapshot) => {
+      setIdeas(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => console.error(err));
+
+    return () => {
+      unsubMiembros();
+      unsubVacaciones();
+      unsubEventos();
+      unsubCumples();
+      unsubIdeas();
+    };
+  }, [user]);
+
+  // --- 3. LOGICA DINÁMICA DE PARENTESCOS BLINDADA ---
+  const getParentescoDinamico = (miembro, yoNombre) => {
+    if (!miembro) return 'Otros';
+    if (miembro.nombre === yoNombre) return 'Tú';
+
+    const yo = integrantes.find(i => i.nombre === yoNombre);
+    if (!yo) return miembro.rol || 'Otros';
+
+    // 1. ESPOSOS / PAREJA
+    if (miembro.parejaDe === yoNombre || (yo.parejaDe && yo.parejaDe === miembro.nombre)) {
+      return yo.rol === 'Hermanos' ? 'Tu Esposa/o' : 'Tu Pareja';
+    }
+
+    // 2. PADRES
+    if (miembro.rol === 'Padres') {
+      return miembro.nombre === 'Mamá' ? 'Tu Madre' : 'Tu Padre';
+    }
+
+    // 3. HIJOS DIRECTOS
+    if (miembro.rol === 'Hijos' && miembro.padres && Array.isArray(miembro.padres) && miembro.padres.includes(yoNombre)) {
+      return 'Tu Hijo/a';
+    }
+
+    // 4. AHIJADOS DIRECTOS
+    if (miembro.padrinos && Array.isArray(miembro.padrinos) && miembro.padrinos.includes(yoNombre)) {
+      return 'Tu Ahijado/a 🌟';
+    }
+
+    // 5. HERMANOS
+    if (yo.rol === 'Hermanos' && miembro.rol === 'Hermanos') {
+      return 'Tu Hermano/a';
+    }
+
+    // 6. CUÑADOS
+    if (yo.rol === 'Hermanos' && miembro.rol === 'Cuñados') {
+      if (miembro.parejaDe) {
+        return `Tu Cuñado/a (Pareja de ${miembro.parejaDe})`;
+      }
+      return 'Tu Cuñado/a';
+    }
+
+    if (yo.rol === 'Cuñados' && miembro.rol === 'Hermanos') {
+      if (yo.parejaDe === miembro.nombre) {
+        return 'Tu Pareja / Esposo';
+      }
+      return 'Tu Cuñado/a';
+    }
+
+    // 7. SOBRINOS (Hijos de tus hermanos)
+    if (miembro.rol === 'Hijos' && miembro.padres && Array.isArray(miembro.padres)) {
+      const esHijoDeHermano = miembro.padres.some(p => {
+        const progenitor = integrantes.find(i => i.nombre === p);
+        return progenitor && progenitor.rol === 'Hermanos' && progenitor.nombre !== yoNombre;
+      });
+      if (esHijoDeHermano) {
+        return 'Tu Sobrino/a';
+      }
+    }
+
+    // 8. NIETOS
+    if (yo.rol === 'Padres' && miembro.rol === 'Hijos') {
+      return 'Tu Nieto/a';
+    }
+    if (yo.rol === 'Padres' && miembro.rol === 'Hermanos') {
+      return 'Tu Hijo/a';
+    }
+
+    return miembro.rol || 'Otros';
+  };
+
+  // --- 4. CÁLCULOS EN MEMORIA TOTALMENTE SALVAGUARDADOS (CRASH-FREE) ---
+  const cumpleanosOrdenados = useMemo(() => {
+    const hoy = new Date();
+    const hoyMes = hoy.getMonth() + 1;
+    const hoyDia = hoy.getDate();
+
+    return [...cumpleanos]
+      .filter(cumple => cumple && cumple.nombre && cumple.fecha && typeof cumple.fecha === 'string' && cumple.fecha.includes('-'))
+      .map(cumple => {
+        const [mesStr, diaStr] = cumple.fecha.split('-');
+        const mes = parseInt(mesStr, 10) || 1;
+        const dia = parseInt(diaStr, 10) || 1;
+        
+        let cumpleAno = hoy.getFullYear();
+        if (mes < hoyMes || (mes === hoyMes && dia < hoyDia)) {
+          cumpleAno += 1;
+        }
+        
+        const fechaCumple = new Date(cumpleAno, mes - 1, dia);
+        const diferenciaMs = fechaCumple.getTime() - hoy.getTime();
+        const diasRestantes = Math.ceil(diferenciaMs / (1000 * 60 * 60 * 24));
+
+        const integranteAsociado = integrantes.find(i => i.nombre === cumple.nombre);
+
+        return {
+          ...cumple,
+          diasFaltantes: diasRestantes,
+          fechaVisual: `${dia} de ${obtenerNombreMes(mes)}`,
+          santo: integranteAsociado ? (integranteAsociado.santo || 'No registrado') : 'No registrado'
+        };
+      })
+      .sort((a, b) => a.diasFaltantes - b.diasFaltantes);
+  }, [cumpleanos, integrantes]);
+
+  const cuentaAtrasVacaciones = useMemo(() => {
+    const hoy = new Date();
+    const futuras = vacaciones
+      .filter(vac => vac && vac.fechaInicio && typeof vac.fechaInicio === 'string')
+      .map(vac => {
+        const fechaIn = new Date(vac.fechaInicio);
+        if (isNaN(fechaIn.getTime())) return { ...vac, diasFaltantes: 999999 };
+        const diffTime = fechaIn.getTime() - hoy.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return { ...vac, diasFaltantes: diffDays };
+      })
+      .filter(vac => vac.diasFaltantes >= 0 && vac.diasFaltantes !== 999999)
+      .sort((a, b) => a.diasFaltantes - b.diasFaltantes);
+
+    return futuras.length > 0 ? futuras[0] : null;
+  }, [vacaciones]);
+
+  function obtenerNombreMes(mesNum) {
+    const meses = [
+      'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+    ];
+    return meses[mesNum - 1] || 'Enero';
+  }
+
+  // --- 5. LOGICA DE EXPORTACIÓN EN PDF / IMPRESIÓN ---
+  const triggerPrintPdf = () => {
+    setIsExporting(true);
+    setTimeout(() => {
+      window.print();
+      setIsExporting(false);
+    }, 500);
+  };
+
+  // --- 6. ACCIONES DE ESCRITURA EN FIREBASE ---
+  const handleAddVacation = async (e) => {
+    e.preventDefault();
+    if (!user) return;
+    if (!newVacation.lugar || !newVacation.fechaInicio || !newVacation.fechaFin || !newVacation.quienes || newVacation.quienes.length === 0) {
+      triggerToast('Completa el destino, las fechas e indica quiénes viajan.');
+      return;
+    }
+
+    const mapUrl = newVacation.ubicacionUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(newVacation.lugar)}`;
+
+    try {
+      const col = collection(db, 'artifacts', appId, 'public', 'data', 'vacaciones');
+      await addDoc(col, {
+        lugar: newVacation.lugar,
+        ubicacionUrl: mapUrl,
+        fechaInicio: newVacation.fechaInicio,
+        fechaFin: newVacation.fechaFin,
+        quienes: newVacation.quienes,
+        nota: newVacation.nota || ''
+      });
+
+      setNewVacation({ lugar: '', ubicacionUrl: '', fechaInicio: '', fechaFin: '', quienes: [], nota: '' });
+      setShowVacationModal(false);
+      triggerToast('☀️ ¡Vacaciones creadas en la nube familiar!');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleClearAllVacations = async () => {
+    if (!user) return;
+    try {
+      const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'vacaciones');
+      const snapshot = await getDocs(colRef);
+      
+      const deletePromises = snapshot.docs.map(docSnap => 
+        deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'vacaciones', docSnap.id))
+      );
+      
+      await Promise.all(deletePromises);
+      setShowConfirmResetModal(false);
+      triggerToast('🗑️ Se han eliminado todas las vacaciones en la nube.');
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const toggleQuienVacacion = (nombre) => {
+    const quienes = newVacation.quienes || [];
+    const index = quienes.indexOf(nombre);
+    if (index === -1) {
+      setNewVacation({ ...newVacation, quienes: [...quienes, nombre] });
+    } else {
+      setNewVacation({
+        ...newVacation,
+        quienes: quienes.filter(q => q !== nombre)
+      });
+    }
+  };
+
+  const handleSaveCumple = async (e) => {
+    e.preventDefault();
+    if (!user) return;
+    if (!newCumple.nombre) {
+      triggerToast('Escribe el nombre del familiar.');
+      return;
+    }
+
+    try {
+      if (isEditingCumple) {
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cumpleanos', editingCumpleId);
+        await updateDoc(docRef, {
+          nombre: newCumple.nombre,
+          fecha: `${newCumple.mes}-${newCumple.dia}`,
+          parentesco: newCumple.parentesco
+        });
+        triggerToast('🎉 Cumpleaños actualizado correctamente.');
+      } else {
+        const col = collection(db, 'artifacts', appId, 'public', 'data', 'cumpleanos');
+        await addDoc(col, {
+          nombre: newCumple.nombre,
+          fecha: `${newCumple.mes}-${newCumple.dia}`,
+          parentesco: newCumple.parentesco
+        });
+        triggerToast('🎉 Cumpleaños guardado en la nube.');
+      }
+
+      setNewCumple({ nombre: '', dia: '01', mes: '01', parentesco: 'Hermano' });
+      setShowCumpleModal(false);
+      setIsEditingCumple(false);
+      setEditingCumpleId(null);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const startEditCumple = (cumple) => {
+    if (!cumple || !cumple.fecha || !cumple.fecha.includes('-')) return;
+    const [mes, dia] = cumple.fecha.split('-');
+    setNewCumple({
+      nombre: cumple.nombre,
+      dia: dia,
+      mes: mes,
+      parentesco: cumple.parentesco || 'Hermano'
+    });
+    setEditingCumpleId(cumple.id);
+    setIsEditingCumple(true);
+    setShowCumpleModal(true);
+  };
+
+  const handleAddEvent = async (e) => {
+    e.preventDefault();
+    if (!user) return;
+    if (!newEvent.titulo || !newEvent.fecha || !newEvent.lugar) {
+      triggerToast('Faltan datos obligatorios de la quedada.');
+      return;
+    }
+
+    const mapUrl = newEvent.ubicacionUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(newEvent.lugar)}`;
+
+    try {
+      const col = collection(db, 'artifacts', appId, 'public', 'data', 'eventos');
+      await addDoc(col, {
+        titulo: newEvent.titulo,
+        fecha: newEvent.fecha,
+        hora: newEvent.hora || 'Por concretar',
+        lugar: newEvent.lugar,
+        ubicacionUrl: mapUrl,
+        descripcion: newEvent.descripcion || '',
+        asistentes: newEvent.asistentes || []
+      });
+
+      setNewEvent({ titulo: '', fecha: '', hora: '', lugar: '', ubicacionUrl: '', descripcion: '', asistentes: [] });
+      setShowEventModal(false);
+      triggerToast('📅 ¡Nueva quedada propuesta en la nube!');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const alternarFamiliarEnEvento = async (evtId, asistentesActuales, nombreFamiliar) => {
+    if (!user) return;
+    const actuales = Array.isArray(asistentesActuales) ? asistentesActuales : [];
+    const yaAsiste = actuales.includes(nombreFamiliar);
+    const nuevosAsistentes = yaAsiste
+      ? actuales.filter(n => n !== nombreFamiliar)
+      : [...actuales, nombreFamiliar];
+
+    try {
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'eventos', evtId);
+      await updateDoc(docRef, { asistentes: nuevosAsistentes });
+      triggerToast(yaAsiste ? `Se desapuntó a ${nombreFamiliar}` : `¡Apuntado ${nombreFamiliar} al plan!`);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleAddIdea = async (e) => {
+    e.preventDefault();
+    if (!user) return;
+    if (!newIdeaText || !newIdeaAuthor) return;
+
+    try {
+      const col = collection(db, 'artifacts', appId, 'public', 'data', 'ideas');
+      await addDoc(col, {
+        autor: newIdeaAuthor,
+        texto: newIdeaText,
+        votos: 1
+      });
+      setNewIdeaText('');
+      setNewIdeaAuthor('');
+      triggerToast('💡 Idea enviada al buzón.');
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleVotarIdea = async (ideaId, votos) => {
+    if (!user) return;
+    try {
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ideas', ideaId);
+      await updateDoc(docRef, { votos: (votos || 0) + 1 });
+      triggerToast('¡Voto sumado! ❤️');
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDeleteElement = async (coleccion, docId) => {
+    if (!user) return;
+    try {
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', coleccion, docId);
+      await deleteDoc(docRef);
+      triggerToast('Elemento eliminado de la nube.');
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleCalendarPrevMonth = () => {
+    setCurrentCalendarDate(new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() - 1, 1));
+  };
+
+  const handleCalendarNextMonth = () => {
+    setCurrentCalendarDate(new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() + 1, 1));
+  };
+
+  const calendarDays = useMemo(() => {
+    const year = currentCalendarDate.getFullYear();
+    const month = currentCalendarDate.getMonth();
+    
+    const primerDiaSemana = new Date(year, month, 1).getDay();
+    const offset = primerDiaSemana === 0 ? 6 : primerDiaSemana - 1;
+
+    const diasTotalesMes = new Date(year, month + 1, 0).getDate();
+    const diasTotalesMesAnterior = new Date(year, month, 0).getDate();
+
+    const result = [];
+
+    for (let i = offset - 1; i >= 0; i--) {
+      result.push({
+        day: diasTotalesMesAnterior - i,
+        isCurrentMonth: false,
+        date: new Date(year, month - 1, diasTotalesMesAnterior - i)
+      });
+    }
+
+    for (let i = 1; i <= diasTotalesMes; i++) {
+      result.push({
+        day: i,
+        isCurrentMonth: true,
+        date: new Date(year, month, i)
+      });
+    }
+
+    const remaining = 42 - result.length;
+    for (let i = 1; i <= remaining; i++) {
+      result.push({
+        day: i,
+        isCurrentMonth: false,
+        date: new Date(year, month + 1, i)
+      });
+    }
+
+    return result;
+  }, [currentCalendarDate]);
+
+  const getDailyDetails = (date) => {
+    const dDia = String(date.getDate()).padStart(2, '0');
+    const dMes = String(date.getMonth() + 1).padStart(2, '0');
+    const dFechaCumple = `${dMes}-${dDia}`;
+
+    const personasEnVacaciones = [];
+    const sitiosVacaciones = [];
+    
+    vacaciones.forEach(v => {
+      if (!v || !v.fechaInicio || !v.fechaFin) return;
+      const start = new Date(v.fechaInicio);
+      const end = new Date(v.fechaFin);
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) return;
+
+      const current = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      start.setHours(0,0,0,0);
+      end.setHours(0,0,0,0);
+      current.setHours(0,0,0,0);
+
+      if (current >= start && current <= end) {
+        personasEnVacaciones.push(...(v.quienes || []));
+        sitiosVacaciones.push(v.lugar || 'Desconocido');
+      }
+    });
+
+    const cumplesHoy = cumpleanos.filter(c => c && c.fecha === dFechaCumple);
+    const distinctPersonas = [...new Set(personasEnVacaciones)];
+    const esGranCoincidencia = distinctPersonas.length >= 4;
+
+    return {
+      vacacionando: distinctPersonas,
+      sitios: [...new Set(sitiosVacaciones)],
+      cumples: cumplesHoy,
+      coincidenTodos: esGranCoincidencia
+    };
+  };
+
+  const handleAddMember = async (e) => {
+    e.preventDefault();
+    if (!user) return;
+    if (!newMember.nombre) return;
+
+    const padresArray = [];
+    if (newMember.padre1) padresArray.push(newMember.padre1);
+    if (newMember.padre2) padresArray.push(newMember.padre2);
+
+    const padrinosArray = [];
+    if (newMember.padrinoMadrina) padrinosArray.push(newMember.padrinoMadrina);
+
+    try {
+      const colMiem = collection(db, 'artifacts', appId, 'public', 'data', 'miembros');
+      await addDoc(colMiem, {
+        nombre: newMember.nombre,
+        rol: newMember.rol,
+        parejaDe: newMember.parejaDe || null,
+        padres: padresArray.length > 0 ? padresArray : null,
+        padrinos: padrinosArray.length > 0 ? padrinosArray : null,
+        santo: newMember.santo || 'No especificado'
+      });
+
+      if (newMember.parejaDe) {
+        const otroMiembro = integrantes.find(i => i.nombre === newMember.parejaDe);
+        if (otroMiembro) {
+          const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'miembros', otroMiembro.id);
+          await updateDoc(docRef, { parejaDe: newMember.nombre });
+        }
+      }
+
+      setNewMember({ nombre: '', rol: 'Hermanos', parejaDe: '', padre1: '', padre2: '', padrinoMadrina: '', santo: '' });
+      setShowMemberModal(false);
+      triggerToast(`¡${newMember.nombre} añadido correctamente!`);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // --- ESTRUCTURA DE LOS 7 HERMANOS PARA EL ÁRBOL GRÁFICO (BLINDADO) ---
+  const hermanosAgrupadosConParejas = useMemo(() => {
+    const listadoHermanos = integrantes.filter(i => i && i.rol === 'Hermanos');
+    const parejas = integrantes.filter(i => i && i.rol === 'Cuñados');
+    
+    return listadoHermanos.map(herm => {
+      const suPareja = parejas.find(p => p && (p.parejaDe === herm.nombre || herm.parejaDe === p.nombre));
+      
+      const susHijos = integrantes.filter(h => 
+        h && h.rol === 'Hijos' && h.padres && Array.isArray(h.padres) && 
+        (h.padres.includes(herm.nombre) || (suPareja && h.padres.includes(suPareja.nombre)))
+      );
+
+      return {
+        hermano: herm,
+        pareja: suPareja,
+        hijos: susHijos
+      };
+    });
+  }, [integrantes]);
+
+  return (
+    <div className={`min-h-screen text-slate-800 font-sans pb-20 md:pb-8 ${isExporting ? 'bg-white p-0 shadow-none' : 'bg-slate-50'}`}>
+      
+      {/* --- MODO EXPORTACIÓN LIMPIO PARA IMPRESIÓN / PDF --- */}
+      {isExporting ? (
+        <div className="p-8 max-w-4xl mx-auto space-y-8 bg-white text-slate-900 animate-fadeIn">
+          <div className="text-center pb-4 border-b border-slate-300">
+            <h1 className="text-3xl font-black">FamilyApp 🏠 - Reporte Familiar</h1>
+            <p className="text-sm text-slate-500">Planificador de Vacaciones y Agenda de Cumpleaños Sincronizada</p>
+            <p className="text-xs text-slate-400 mt-1">Generado en tiempo real desde la nube familiar</p>
+          </div>
+
+          {/* Agenda de Cumpleaños y Santos */}
+          <div className="space-y-4">
+            <h2 className="text-lg font-bold text-indigo-800 border-b pb-1">🎂 Lista de Cumpleaños y Onomásticas (Santos)</h2>
+            <div className="grid grid-cols-2 gap-4 text-xs">
+              {cumpleanosOrdenados.map((cum, idx) => (
+                <div key={idx} className="p-2.5 border border-slate-200 rounded-lg">
+                  <p className="font-bold text-slate-900">{cum.nombre} ({cum.parentesco || 'Familiar'})</p>
+                  <p className="text-slate-600">📅 Cumpleaños: {cum.fechaVisual}</p>
+                  <p className="text-indigo-600 font-medium">✨ Santo: {cum.santo || 'No registrado'}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Calendario de Vacaciones Registradas */}
+          <div className="space-y-4 pt-4">
+            <h2 className="text-lg font-bold text-emerald-800 border-b pb-1">☀️ Planificación de Vacaciones de Verano</h2>
+            <div className="space-y-3 text-xs">
+              {vacaciones.map((vac, idx) => (
+                <div key={idx} className="p-3 border border-slate-200 rounded-lg bg-slate-50">
+                  <div className="flex justify-between font-bold">
+                    <span>📍 {vac.lugar || 'Destino'}</span>
+                    <span className="text-slate-500">{formatearFechaStr(vac.fechaInicio)} al {formatearFechaStr(vac.fechaFin)}</span>
+                  </div>
+                  <p className="text-slate-600 mt-1">👤 <strong>Viajan:</strong> {Array.isArray(vac.quienes) ? vac.quienes.join(', ') : 'Varios'}</p>
+                  {vac.nota && <p className="text-slate-500 italic mt-0.5">" {vac.nota} "</p>}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="text-center pt-8 border-t text-[10px] text-slate-400">
+            Hecho con mucho cariño para los 7 hermanos, cuñados, sobrinos y abuelos.
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* --- TOAST --- */}
+          {toastMessage && (
+            <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-2 border border-slate-700 animate-bounce">
+              <Sparkles className="w-5 h-5 text-amber-400" />
+              <span className="text-xs font-medium">{toastMessage}</span>
+            </div>
+          )}
+
+          {/* --- CABECERA --- */}
+          <header className="bg-gradient-to-r from-teal-600 via-emerald-600 to-indigo-700 text-white shadow-md sticky top-0 z-30">
+            <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col sm:flex-row justify-between items-center gap-3">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/10 p-2 rounded-2xl backdrop-blur-md">
+                  <Users className="w-8 h-8 text-amber-300" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-2xl font-bold tracking-tight">FamilyApp 🏠</h1>
+                    <span className="bg-emerald-500/30 text-[10px] text-emerald-200 border border-emerald-400/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></span>
+                      Nube Sincronizada
+                    </span>
+                  </div>
+                  <p className="text-xs text-emerald-100 font-light">
+                    Portal familiar con onomásticas, árbol visual y exportación PDF para los 7 hermanos
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                {/* BOTÓN EXPORTAR REPORTE PDF */}
+                <button
+                  onClick={triggerPrintPdf}
+                  className="bg-white/15 hover:bg-white/25 text-white text-xs font-bold py-2 px-3 rounded-xl flex items-center gap-1.5 transition-all border border-white/10 shadow-xs"
+                >
+                  <Printer className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Exportar en PDF</span>
+                </button>
+
+                {/* PERSPECTIVA DINÁMICA */}
+                <div className="flex items-center gap-1.5 bg-slate-900/30 p-1.5 rounded-xl border border-white/10">
+                  <select
+                    className="bg-transparent text-white text-xs font-bold py-0.5 px-1.5 border-none focus:outline-none cursor-pointer"
+                    value={usuarioActivo}
+                    onChange={(e) => {
+                      setUsuarioActivo(e.target.value);
+                      triggerToast(`Viendo app como: ${e.target.value}`);
+                    }}
+                  >
+                    {integrantes.map(inte => (
+                      <option key={inte.id} value={inte.nombre} className="text-slate-800">
+                        Ver como: {inte.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          {/* --- WIDGET ALERTA CUENTA ATRÁS --- */}
+          {cuentaAtrasVacaciones && (
+            <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-rose-600 text-white py-3 px-4 shadow-inner text-center">
+              <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-2">
+                <BellRing className="w-5 h-5 text-yellow-200 shrink-0 animate-bounce" />
+                <p className="text-xs sm:text-sm font-bold tracking-wide">
+                  📢 ¡VACACIONES CERCA! Faltan <span className="underline decoration-yellow-300 decoration-2 font-black text-yellow-100 text-base">{cuentaAtrasVacaciones.diasFaltantes} días</span> para viajar a <span className="bg-white/20 px-2 py-0.5 rounded-md font-black">{cuentaAtrasVacaciones.lugar || 'tu destino'}</span> ({Array.isArray(cuentaAtrasVacaciones.quienes) ? cuentaAtrasVacaciones.quienes.join(', ') : 'Varios'}).
+                </p>
+                <button
+                  onClick={() => setActiveTab('vacaciones')}
+                  className="text-xs font-bold text-yellow-100 bg-black/10 hover:bg-black/20 px-3 py-1 rounded-lg border border-white/10 transition-all"
+                >
+                  Ver detalles
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* --- NAVEGACIÓN PRINCIPAL --- */}
+          <nav className="bg-white border-b border-slate-200 sticky top-[72px] sm:top-[76px] z-20 shadow-sm">
+            <div className="max-w-6xl mx-auto px-2 flex justify-around sm:justify-start gap-1 md:gap-6 overflow-x-auto scrollbar-none">
+              {[
+                { id: 'inicio', label: 'Inicio', icon: Home },
+                { id: 'arbol', label: 'Árbol Genealógico', icon: Users },
+                { id: 'calendario', label: 'Calendario Visual', icon: CalendarIcon },
+                { id: 'vacaciones', label: 'Vacaciones Verano', icon: Sun },
+                { id: 'eventos', label: 'Barbacoas y Quedadas', icon: CalendarIcon },
+                { id: 'cumples', label: 'Cumples y Santos', icon: Gift },
+                { id: 'ideas', label: 'Buzón de Ideas', icon: MessageSquare }
+              ].map(tab => {
+                const Icon = tab.icon;
+                const isSelected = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`py-3.5 px-3 md:px-5 font-semibold text-xs md:text-sm flex flex-col sm:flex-row items-center gap-1.5 border-b-2 transition-all whitespace-nowrap ${
+                      isSelected 
+                        ? 'border-emerald-600 text-emerald-600 bg-emerald-50/50' 
+                        : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+                    }`}
+                  >
+                    <Icon className={`w-4 h-4 ${isSelected ? 'text-emerald-600' : 'text-slate-400'}`} />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
+
+          {/* --- CONTENIDO --- */}
+          <main className="max-w-6xl mx-auto px-4 py-6">
+            {loading ? (
+              <div className="text-center py-20 space-y-3">
+                <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                <p className="text-slate-500 text-sm">Cargando base de datos familiar en la nube...</p>
+              </div>
+            ) : (
+              <>
+                {/* ================= PÁGINA: INICIO ================= */}
+                {activeTab === 'inicio' && (
+                  <div className="space-y-6">
+                    <div className="bg-gradient-to-br from-teal-50 via-emerald-50 to-indigo-50 border border-teal-100 p-6 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm animate-fadeIn">
+                      <div className="space-y-2">
+                        <h2 className="text-xl md:text-2xl font-black text-slate-800">¡Bienvenidos a FamilyApp! 👋</h2>
+                        <p className="text-slate-600 text-sm max-w-xl">
+                          Sincroniza los tramos libres de Chiclana, Sevilla, los cumpleaños, onomásticas (santos) y el árbol visual familiar de los 7 hermanos con un solo clic.
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => setActiveTab('arbol')} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4.5 py-2.5 rounded-xl transition shadow-md">
+                          Ver Árbol Visual 🌳
+                        </button>
+                        <button onClick={triggerPrintPdf} className="bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-4.5 py-2.5 rounded-xl transition shadow-md flex items-center gap-1">
+                          <Printer className="w-3.5 h-3.5" /> PDF Imprimible
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Grid Resumen */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {/* Siguiente cumpleaños */}
+                      <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-150 flex flex-col justify-between">
+                        <div>
+                          <div className="flex justify-between items-center mb-3">
+                            <span className="bg-pink-100 text-pink-700 text-xs font-bold px-2.5 py-1 rounded-lg flex items-center gap-1">
+                              <Gift className="w-3 h-3" /> Siguiente Cumpleaños
+                            </span>
+                          </div>
+                          {cumpleanosOrdenados.length > 0 ? (
+                            <div className="space-y-2">
+                              <h3 className="text-2xl font-black text-slate-800">{cumpleanosOrdenados[0].nombre}</h3>
+                              <p className="text-xs text-slate-500">
+                                Cumple: <span className="font-semibold text-slate-700">{cumpleanosOrdenados[0].fechaVisual}</span>
+                              </p>
+                              <p className="text-xs text-indigo-600 font-medium">
+                                ✨ Santo: {cumpleanosOrdenados[0].santo || 'No registrado'}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-slate-400 text-sm">No hay cumpleaños agendados.</p>
+                          )}
+                        </div>
+                        {cumpleanosOrdenados.length > 0 && (
+                          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                            <span className="text-xs text-pink-600 bg-pink-50 font-bold px-3 py-1 rounded-full">
+                              ¡Faltan {cumpleanosOrdenados[0].diasFaltantes} días! 🎂
+                            </span>
+                            <button onClick={() => setActiveTab('cumples')} className="text-xs text-slate-500 hover:text-emerald-600 font-semibold flex items-center gap-0.5">
+                              Ver todos <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Quedada próxima */}
+                      <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-150 flex flex-col justify-between">
+                        <div>
+                          <div className="flex justify-between items-center mb-3">
+                            <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2.5 py-1 rounded-lg flex items-center gap-1">
+                              <CalendarIcon className="w-3 h-3" /> Quedada Próxima
+                            </span>
+                          </div>
+                          {eventos.length > 0 ? (
+                            <div className="space-y-1">
+                              <h3 className="text-lg font-bold text-slate-800 line-clamp-1">{eventos[0].titulo}</h3>
+                              <p className="text-xs text-slate-500">📅 {formatearFechaStr(eventos[0].fecha)} - {eventos[0].hora}</p>
+                              <p className="text-xs text-emerald-600 font-semibold">📍 {eventos[0].lugar}</p>
+                            </div>
+                          ) : (
+                            <p className="text-slate-400 text-sm">No hay quedadas agendadas.</p>
+                          )}
+                        </div>
+                        {eventos.length > 0 && (
+                          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                            <span className="text-xs text-indigo-600 bg-indigo-50 font-bold px-2.5 py-1 rounded-full">
+                              {eventos[0].asistentes?.length || 0} confirmados 👍
+                            </span>
+                            <button onClick={() => setActiveTab('eventos')} className="text-xs text-slate-500 hover:text-emerald-600 font-semibold flex items-center gap-0.5">
+                              Detalles <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Vacaciones */}
+                      <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-150 flex flex-col justify-between">
+                        <div>
+                          <div className="flex justify-between items-center mb-3">
+                            <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-1 rounded-lg flex items-center gap-1">
+                              <Sun className="w-3 h-3 text-emerald-600" /> Verano Compartido
+                            </span>
+                          </div>
+                          <div className="space-y-2">
+                            <h3 className="text-base font-bold text-slate-800">Chiclana, Sevilla y Munibáñez</h3>
+                            <p className="text-xs text-slate-600">
+                              Hay <strong className="text-emerald-700">{vacaciones.length} tramos</strong> registrados. ¿Cuál está libre?
+                            </p>
+                          </div>
+                        </div>
+                        <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                          <span className="text-[11px] text-emerald-700 bg-emerald-50 font-medium px-2 py-0.5 rounded-full">
+                            Nube activa
+                          </span>
+                          <button onClick={() => setActiveTab('calendario')} className="text-xs text-slate-500 hover:text-emerald-600 font-semibold flex items-center gap-0.5">
+                            Ver Mes Gráfico <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                )}
+
+
+                {/* ================= PÁGINA: ÁRBOL GENEALÓGICO VISUAL ================= */}
+                {activeTab === 'arbol' && (
+                  <div className="space-y-6 animate-fadeIn">
+                    
+                    <div className="bg-white p-6 rounded-3xl border border-slate-150 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                      <div>
+                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                          <Users className="w-6 h-6 text-emerald-600" /> Árbol Genealógico Interactivo
+                        </h2>
+                        <p className="text-slate-500 text-sm mt-1">
+                          Representación visual de la familia de los 7 hermanos, sus parejas e hijos/sobrinos. ¡Sincronizado en tiempo real!
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setShowMemberModal(true)}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center gap-1.5 transition-all shadow-md shrink-0"
+                      >
+                        <UserPlus className="w-4 h-4" /> Añadir Familiar
+                      </button>
+                    </div>
+
+                    {/* LIENZO GRÁFICO DEL ÁRBOL */}
+                    <div className="bg-white rounded-3xl border border-slate-200 p-8 shadow-sm space-y-12 overflow-x-auto min-w-full">
+                      
+                      {/* NIVEL 1: LOS ABUELOS / PADRES */}
+                      <div className="flex flex-col items-center">
+                        <div className="bg-gradient-to-r from-rose-500 to-rose-600 text-white p-4 rounded-2xl shadow-md text-center w-60 border-2 border-rose-300">
+                          <span className="text-xs uppercase font-bold tracking-wider text-rose-100">Tronco Familiar</span>
+                          <h3 className="text-lg font-black mt-1">Mamá & Papá 👵👴</h3>
+                          <p className="text-[10px] text-rose-500 bg-white px-2 py-0.5 rounded-full inline-block mt-2 font-black">Los Abuelos de la Familia</p>
+                        </div>
+                        {/* Conector vertical hacia abajo */}
+                        <div className="w-1 h-8 bg-slate-300"></div>
+                        <div className="w-5/6 h-0.5 bg-slate-300"></div>
+                      </div>
+
+                      {/* NIVEL 2: LOS 7 HERMANOS, SUS PAREJAS Y SUS RAMAS */}
+                      <div className="grid grid-cols-1 md:grid-cols-7 gap-6 text-center">
+                        {hermanosAgrupadosConParejas.map((rama, idx) => {
+                          const hermanoActivo = rama.hermano;
+                          const parejaActiva = rama.pareja;
+                          const hijosActivos = rama.hijos;
+
+                          if (!hermanoActivo) return null;
+
+                          return (
+                            <div key={idx} className="flex flex-col items-center space-y-4 bg-slate-50/60 p-4 rounded-2xl border border-slate-150 relative">
+                              
+                              {/* Tarjeta del Hermano */}
+                              <div className="space-y-2 w-full">
+                                <div className="bg-white p-3 rounded-xl border border-emerald-200 shadow-xs relative">
+                                  {/* Botón borrar */}
+                                  <button
+                                    onClick={() => handleDeleteElement('miembros', hermanoActivo.id)}
+                                    className="absolute -top-1.5 right-1 text-rose-400 hover:text-rose-600 p-0.5"
+                                  >
+                                    <XCircle className="w-4 h-4" />
+                                  </button>
+
+                                  <p className="font-bold text-xs text-slate-800 truncate">{hermanoActivo.nombre}</p>
+                                  <span className="bg-emerald-100 text-emerald-800 text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase">Hermano</span>
+                                  {hermanoActivo.santo && (
+                                    <p className="text-[8px] text-slate-400 mt-1 truncate">✨ Santo: {hermanoActivo.santo.split(' ')[0]}</p>
+                                  )}
+                                </div>
+
+                                {/* Conector de pareja si existe */}
+                                {parejaActiva ? (
+                                  <div className="space-y-2">
+                                    <div className="text-slate-400 text-xs font-black">❤️</div>
+                                    <div className="bg-white p-3 rounded-xl border border-indigo-200 shadow-xs relative">
+                                      <button
+                                        onClick={() => handleDeleteElement('miembros', parejaActiva.id)}
+                                        className="absolute -top-1.5 right-1 text-rose-400 hover:text-rose-600 p-0.5"
+                                      >
+                                        <XCircle className="w-4 h-4" />
+                                      </button>
+                                      <p className="font-bold text-xs text-slate-800 truncate">{parejaActiva.nombre}</p>
+                                      <span className="bg-indigo-100 text-indigo-800 text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase">Cuñado/a</span>
+                                      {parejaActiva.santo && (
+                                        <p className="text-[8px] text-slate-400 mt-1 truncate">✨ Santo: {parejaActiva.santo.split(' ')[0]}</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="text-[10px] text-slate-400 italic mt-2">Sin pareja registrada</div>
+                                )}
+                              </div>
+
+                              {/* Conectores hacia la rama de hijos si existen */}
+                              {hijosActivos && hijosActivos.length > 0 && (
+                                <>
+                                  <div className="w-0.5 h-6 bg-slate-300"></div>
+                                  <div className="w-full space-y-2 pt-1 border-t border-dashed border-slate-300">
+                                    <p className="text-[9px] text-slate-400 uppercase font-black">Hijos / Sobrinos</p>
+                                    <div className="space-y-1.5">
+                                      {hijosActivos.map((hijo, hIdx) => (
+                                        <div key={hIdx} className="bg-sky-50 p-2 rounded-lg border border-sky-100 text-[10px] relative">
+                                          <button
+                                            onClick={() => handleDeleteElement('miembros', hijo.id)}
+                                            className="absolute -top-1.5 right-1 text-rose-400 hover:text-rose-600 p-0.5"
+                                          >
+                                            <XCircle className="w-3.5 h-3.5" />
+                                          </button>
+                                          <p className="font-bold text-sky-950 truncate flex items-center justify-center gap-0.5">
+                                            👶 {hijo.nombre}
+                                          </p>
+                                          {hijo.padrinos && Array.isArray(hijo.padrinos) && (
+                                            <p className="text-[8px] text-amber-700 bg-amber-50 rounded px-1 mt-1 truncate">
+                                              🌟 Ahijado de {hijo.padrinos.join(', ')}
+                                            </p>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </>
+                              )}
+
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                    </div>
+
+                  </div>
+                )}
+
+
+                {/* ================= PÁGINA: CALENDARIO VISUAL ================= */}
+                {activeTab === 'calendario' && (
+                  <div className="space-y-6 animate-fadeIn">
+                    <div className="bg-white p-6 rounded-3xl border border-slate-150 shadow-sm">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div>
+                          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                            <CalendarIcon className="w-6 h-6 text-emerald-600" /> Planificador Gráfico Mensual
+                          </h2>
+                        </div>
+                        <div className="flex items-center gap-3 bg-slate-100 p-1.5 rounded-xl">
+                          <button onClick={handleCalendarPrevMonth} className="p-1.5 bg-white rounded-lg shadow-xs text-slate-700 hover:bg-slate-50">
+                            <ChevronLeft className="w-4 h-4" />
+                          </button>
+                          <span className="text-xs font-black text-slate-800 px-3 uppercase tracking-wider min-w-[130px] text-center">
+                            {obtenerNombreMes(currentCalendarDate.getMonth() + 1)} {currentCalendarDate.getFullYear()}
+                          </span>
+                          <button onClick={handleCalendarNextMonth} className="p-1.5 bg-white rounded-lg shadow-xs text-slate-700 hover:bg-slate-50">
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white px-6 py-3.5 rounded-2xl border border-slate-150 shadow-xs flex flex-wrap gap-4 text-xs text-slate-600 justify-center">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-3.5 h-3.5 rounded-md bg-amber-200 border border-amber-300 inline-block"></span>
+                        <span>Vacaciones registradas</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-3.5 h-3.5 rounded-md bg-rose-500 border border-rose-600 inline-block"></span>
+                        <span>¡Coincidencia familiar total! (4+)</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                      <div className="grid grid-cols-7 bg-slate-50 border-b border-slate-200 text-center py-2.5">
+                        {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(dayName => (
+                          <span key={dayName} className="text-xs font-black text-slate-500 uppercase tracking-wider">{dayName}</span>
+                        ))}
+                      </div>
+
+                      <div className="grid grid-cols-7 md:h-[600px] border-b border-slate-200">
+                        {calendarDays.map((cell, idx) => {
+                          const details = getDailyDetails(cell.date);
+                          const isToday = new Date().toDateString() === cell.date.toDateString();
+
+                          let cellBg = 'bg-white';
+                          if (!cell.isCurrentMonth) {
+                            cellBg = 'bg-slate-50 text-slate-400';
+                          } else if (details.coincidenTodos) {
+                            cellBg = 'bg-gradient-to-br from-rose-500 to-orange-500 text-white';
+                          } else if (details.vacacionando.length > 0) {
+                            cellBg = 'bg-amber-50 border-amber-100';
+                          }
+
+                          return (
+                            <div key={idx} className={`min-h-[85px] md:min-h-[100px] border-r border-b border-slate-200 p-2 flex flex-col justify-between hover:bg-slate-50/70 relative ${cellBg}`}>
+                              <div className="flex justify-between items-center">
+                                <span className={`text-xs font-black rounded-full w-5 h-5 flex items-center justify-center ${
+                                  isToday ? 'bg-indigo-600 text-white ring-2 ring-indigo-300' : cell.isCurrentMonth ? 'text-slate-800' : 'text-slate-400'
+                                }`}>
+                                  {cell.day}
+                                </span>
+                                {details.cumples && details.cumples.length > 0 && <span className="text-xs">🎂</span>}
+                              </div>
+
+                              <div className="space-y-1 mt-1 text-[10px] overflow-hidden max-h-16">
+                                {details.vacacionando.length > 0 && <div className="font-semibold truncate">📍 {details.sitios.join(' & ')}</div>}
+                                <div className="flex flex-wrap gap-0.5 max-h-10 overflow-y-auto">
+                                  {details.vacacionando.slice(0, 3).map((pers, pIdx) => (
+                                    <span key={pIdx} className={`px-1 py-0.2 rounded font-medium text-[8px] truncate ${details.coincidenTodos ? 'bg-white/20 text-white' : 'bg-amber-200 text-amber-900 border border-amber-300'}`}>
+                                      {pers.split(' ')[0]}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+
+                {/* ================= PÁGINA: VACACIONES ================= */}
+                {activeTab === 'vacaciones' && (
+                  <div className="space-y-6 animate-fadeIn">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-3xl border border-slate-150 shadow-sm">
+                      <div className="flex-1">
+                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                          <Sun className="w-6 h-6 text-amber-500" /> Planificador de Vacaciones Familiares
+                        </h2>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+                        <button onClick={() => setShowConfirmResetModal(true)} className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs py-2.5 px-4 rounded-xl flex items-center gap-1.5 flex-1 sm:flex-initial">
+                          <Trash2 className="w-4 h-4" /> Vaciar Todo
+                        </button>
+                        <button onClick={() => setShowVacationModal(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center gap-1.5 shadow-md flex-1 sm:flex-initial">
+                          <Plus className="w-4 h-4" /> Registrar Mis Vacaciones
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {vacaciones.map(vac => (
+                        <div key={vac.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col justify-between hover:border-emerald-200 transition-all">
+                          <div className="p-5">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <span className="bg-emerald-50 text-emerald-700 text-xs font-bold px-3 py-1 rounded-full">Destino Vacacional</span>
+                                <h3 className="text-xl font-bold text-slate-800 mt-2 flex items-center gap-2">
+                                  <MapPin className="w-5 h-5 text-rose-500" /> {vac.lugar || 'Destino'}
+                                </h3>
+                              </div>
+                              <button onClick={() => handleDeleteElement('vacaciones', vac.id)} className="text-slate-300 hover:text-rose-500 p-1.5 rounded-lg">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+
+                            <div className="mt-4 flex items-center gap-4 bg-slate-50 p-3 rounded-xl border border-slate-150 text-xs text-slate-600">
+                              <div>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase">Entrada</p>
+                                <p className="font-semibold text-slate-800">{formatearFechaStr(vac.fechaInicio)}</p>
+                              </div>
+                              <div className="h-6 w-px bg-slate-200" />
+                              <div>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase">Salida</p>
+                                <p className="font-semibold text-slate-800">{formatearFechaStr(vac.fechaFin)}</p>
+                              </div>
+                            </div>
+
+                            <div className="mt-4">
+                              <p className="text-xs font-bold text-slate-500 mb-2">Familiares allí ({vac.quienes?.length || 0}):</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {vac.quienes?.map((nombre, idx) => (
+                                  <span key={idx} className="text-xs bg-white border border-slate-200 text-slate-700 font-medium px-2.5 py-1 rounded-lg">👤 {nombre}</span>
+                                ))}
+                              </div>
+                            </div>
+                            {vac.nota && (
+                              <p className="mt-3 text-xs italic text-slate-500 bg-slate-50 p-2 rounded-lg">
+                                "{vac.nota}"
+                              </p>
+                            )}
+                          </div>
+                          <div className="bg-slate-50 p-3.5 text-right border-t border-slate-100">
+                            {vac.ubicacionUrl && (
+                              <a href={vac.ubicacionUrl} target="_blank" rel="noreferrer" className="text-xs text-indigo-600 font-bold inline-flex items-center gap-1">
+                                <ExternalLink className="w-3 h-3" /> Ver ubicación en Maps
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+
+                {/* ================= PÁGINA: EVENTOS ================= */}
+                {activeTab === 'eventos' && (
+                  <div className="space-y-6 animate-fadeIn">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-3xl border border-slate-150 shadow-sm">
+                      <div>
+                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                          <CalendarIcon className="w-6 h-6 text-indigo-600" /> Barbacoas y Quedadas Fines de Semana
+                        </h2>
+                      </div>
+                      <button onClick={() => setShowEventModal(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-md shrink-0">
+                        <Plus className="w-4 h-4" /> Proponer Plan Familiar
+                      </button>
+                    </div>
+
+                    <div className="space-y-4">
+                      {eventos.map(evt => (
+                        <div key={evt.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div className="space-y-2 flex-1">
+                              <h3 className="text-xl font-bold text-slate-800">{evt.titulo}</h3>
+                              <p className="text-xs text-slate-500">📅 Fecha: {formatearFechaStr(evt.fecha)} - {evt.hora} | 📍 Lugar: {evt.lugar}</p>
+                              {evt.descripcion && <p className="text-xs text-slate-600 bg-slate-55 p-2 rounded-lg">{evt.descripcion}</p>}
+                            </div>
+                            <div className="md:w-72 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                              <p className="text-xs font-bold text-slate-600 mb-2">Confirmados:</p>
+                              <div className="flex flex-wrap gap-1">
+                                {integrantes.map(int => {
+                                  const asiste = evt.asistentes?.includes(int.nombre);
+                                  return (
+                                    <button key={int.id} onClick={() => alternarFamiliarEnEvento(evt.id, evt.asistentes || [], int.nombre)} className={`text-[9px] px-2 py-0.5 rounded ${asiste ? 'bg-emerald-600 text-white font-bold' : 'bg-white border text-slate-600'}`}>
+                                      {int.nombre}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+
+                {/* ================= PÁGINA: CUMPLEAÑOS Y SANTOS ================= */}
+                {activeTab === 'cumples' && (
+                  <div className="space-y-6 animate-fadeIn">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-3xl border border-slate-150 shadow-sm">
+                      <div>
+                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                          <Gift className="w-6 h-6 text-pink-500" /> Cumpleaños y Onomásticas (Santos)
+                        </h2>
+                        <p className="text-slate-500 text-sm mt-1">
+                          No te olvides de felicitar ni por el cumpleaños ni por su Santo. ¡Sincronizado en tiempo real!
+                        </p>
+                      </div>
+                      <button onClick={() => { setIsEditingCumple(false); setShowCumpleModal(true); }} className="bg-pink-600 hover:bg-pink-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-md shrink-0">
+                        <Plus className="w-4 h-4" /> Añadir Cumpleaños
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                      {cumpleanosOrdenados.map((cum, idx) => (
+                        <div key={cum.id} className={`p-5 rounded-2xl border ${idx === 0 ? 'bg-pink-50/70 border-pink-200 ring-2 ring-pink-400' : 'bg-white border-slate-200'}`}>
+                          <div className="flex justify-between items-start">
+                            <div className="flex items-center gap-2">
+                              <span>🎂</span>
+                              <h3 className="font-bold text-slate-800">{cum.nombre}</h3>
+                            </div>
+                            <div className="flex gap-1">
+                              <button onClick={() => startEditCumple(cum)} className="text-slate-400 hover:text-indigo-600 p-1"><Edit2 className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => handleDeleteElement('cumpleanos', cum.id)} className="text-slate-300 hover:text-rose-500 p-1">✕</button>
+                            </div>
+                          </div>
+                          
+                          <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-600 space-y-1">
+                            <p>📅 <strong>Cumpleaños:</strong> {cum.fechaVisual} ({cum.diasFaltantes === 0 ? '¡Hoy! 🎉' : `Faltan ${cum.diasFaltantes} días`})</p>
+                            <p className="text-indigo-600 font-medium">✨ <strong>Santo de cada uno:</strong> {cum.santo}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+
+                {/* ================= PÁGINA: BUZÓN DE IDEAS ================= */}
+                {activeTab === 'ideas' && (
+                  <div className="space-y-6 animate-fadeIn">
+                    <div className="bg-white p-6 rounded-3xl border border-slate-150 shadow-sm">
+                      <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                        <MessageSquare className="w-6 h-6 text-emerald-600" /> Buzón de Sugerencias Familiares
+                      </h2>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="bg-white p-6 rounded-2xl border border-slate-200 h-fit space-y-4">
+                        <form onSubmit={handleAddIdea} className="space-y-3">
+                          <input type="text" required className="w-full text-xs p-2.5 rounded-xl border" placeholder="Tu Nombre" value={newIdeaAuthor} onChange={(e) => setNewIdeaAuthor(e.target.value)} />
+                          <textarea rows="3" required className="w-full text-xs p-2.5 rounded-xl border" placeholder="Escribe tu idea..." value={newIdeaText} onChange={(e) => setNewIdeaText(e.target.value)} />
+                          <button type="submit" className="w-full bg-emerald-600 text-white text-xs font-bold py-2.5 rounded-xl">Publicar Idea</button>
+                        </form>
+                      </div>
+
+                      <div className="md:col-span-2 space-y-3">
+                        {ideas.map(id => (
+                          <div key={id.id} className="bg-white p-4 rounded-xl border border-slate-150 flex justify-between items-center">
+                            <div>
+                              <p className="text-xs text-slate-700">"{id.texto}"</p>
+                              <p className="text-[10px] text-slate-400 font-medium">Propuesto por {id.autor}</p>
+                            </div>
+                            <button onClick={() => handleVotarIdea(id.id, id.votos)} className="bg-slate-50 border px-3 py-2 rounded-xl flex flex-col items-center">
+                              <Heart className="w-4 h-4 text-rose-500 fill-rose-500" />
+                              <span className="text-[10px] font-bold">{id.votos || 0} votos</span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </main>
+
+          {/* --- MODALES --- */}
+
+          {/* 1. Registrar Vacaciones */}
+          {showVacationModal && (
+            <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50 animate-fadeIn">
+              <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4">
+                <h3 className="font-bold text-slate-800 text-lg">Registrar Vacaciones</h3>
+                <form onSubmit={handleAddVacation} className="space-y-3 text-xs">
+                  <input type="text" required placeholder="Destino..." className="w-full p-2.5 border rounded-xl" value={newVacation.lugar} onChange={(e) => setNewVacation({ ...newVacation, lugar: e.target.value })} />
+                  <input type="url" placeholder="URL Google Maps (Opcional)..." className="w-full p-2.5 border rounded-xl" value={newVacation.ubicacionUrl} onChange={(e) => setNewVacation({ ...newVacation, ubicacionUrl: e.target.value })} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input type="date" required className="p-2.5 border rounded-xl" value={newVacation.fechaInicio} onChange={(e) => setNewVacation({ ...newVacation, fechaInicio: e.target.value })} />
+                    <input type="date" required className="p-2.5 border rounded-xl" value={newVacation.fechaFin} onChange={(e) => setNewVacation({ ...newVacation, fechaFin: e.target.value })} />
+                  </div>
+                  <div className="p-2 bg-slate-50 border rounded-xl flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+                    {integrantes.map(i => (
+                      <button type="button" key={i.id} onClick={() => toggleQuienVacacion(i.nombre)} className={`p-1 rounded text-[10px] ${newVacation.quienes && newVacation.quienes.includes(i.nombre) ? 'bg-emerald-600 text-white' : 'bg-white border'}`}>{i.nombre}</button>
+                    ))}
+                  </div>
+                  <input type="text" placeholder="Notas sobre el viaje (Alojamiento, ruta, etc.)..." className="w-full p-2.5 border rounded-xl" value={newVacation.nota} onChange={(e) => setNewVacation({ ...newVacation, nota: e.target.value })} />
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button type="button" onClick={() => setShowVacationModal(false)} className="p-2 text-slate-500">Cancelar</button>
+                    <button type="submit" className="bg-emerald-600 text-white px-4 py-2 rounded-xl">Guardar</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* 2. Confirmación Reset */}
+          {showConfirmResetModal && (
+            <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50 animate-fadeIn">
+              <div className="bg-white rounded-3xl max-w-sm w-full p-6 text-center space-y-4">
+                <h3 className="font-bold text-slate-950 text-lg">¿Resetear todas las vacaciones?</h3>
+                <p className="text-xs text-slate-500">Esta acción eliminará de forma irreversible todas las vacaciones de la nube.</p>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowConfirmResetModal(false)} className="w-full border p-2 rounded-xl text-xs">No, cancelar</button>
+                  <button onClick={handleClearAllVacations} className="w-full bg-rose-600 text-white p-2 rounded-xl text-xs">Sí, vaciar todo</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 3. Registrar Familiar */}
+          {showMemberModal && (
+            <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50 animate-fadeIn">
+              <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+                <h3 className="font-bold text-slate-800 text-base">Añadir Miembro / Familiar</h3>
+                <form onSubmit={handleAddMember} className="space-y-4 text-xs">
+                  
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Nombre Completo:</label>
+                    <input 
+                      type="text" 
+                      required 
+                      placeholder="Ej: Sofía, Lucas, Elena..." 
+                      className="w-full p-2.5 border rounded-xl" 
+                      value={newMember.nombre} 
+                      onChange={(e) => setNewMember({ ...newMember, nombre: e.target.value })} 
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Día de su Santo (Onomástica):</label>
+                    <input 
+                      type="text" 
+                      placeholder="Ej: 3 de Junio (San Isaac)..." 
+                      className="w-full p-2.5 border rounded-xl" 
+                      value={newMember.santo} 
+                      onChange={(e) => setNewMember({ ...newMember, santo: e.target.value })} 
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Rol en la Familia:</label>
+                    <select 
+                      className="w-full p-2.5 border rounded-xl bg-white" 
+                      value={newMember.rol} 
+                      onChange={(e) => setNewMember({ ...newMember, rol: e.target.value })}
+                    >
+                      <option value="Hermanos">Hermanos</option>
+                      <option value="Cuñados">Cuñados / Parejas de hermanos</option>
+                      <option value="Hijos">Hijos / Sobrinos</option>
+                      <option value="Padres">Padres / Abuelos (Mamá/Papá)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">¿Es pareja de algún miembro actual?:</label>
+                    <select 
+                      className="w-full p-2.5 border rounded-xl bg-white" 
+                      value={newMember.parejaDe}
+                      onChange={(e) => setNewMember({ ...newMember, parejaDe: e.target.value })}
+                    >
+                      <option value="">Nadie / Soltero</option>
+                      {integrantes.map(i => (
+                        <option key={i.id} value={i.nombre}>{i.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold text-slate-500">¿Quiénes son sus padres? (Opcional):</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <select 
+                        className="p-2 border rounded-xl bg-white" 
+                        value={newMember.padre1}
+                        onChange={(e) => setNewMember({ ...newMember, padre1: e.target.value })}
+                      >
+                        <option value="">Madre/Padre 1</option>
+                        {integrantes.map(i => (
+                          <option key={i.id} value={i.nombre}>{i.nombre}</option>
+                        ))}
+                      </select>
+                      <select 
+                        className="p-2 border rounded-xl bg-white" 
+                        value={newMember.padre2}
+                        onChange={(e) => setNewMember({ ...newMember, padre2: e.target.value })}
+                      >
+                        <option value="">Madre/Padre 2</option>
+                        {integrantes.map(i => (
+                          <option key={i.id} value={i.nombre}>{i.nombre}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">¿Quién es su Padrino o Madrina?:</label>
+                    <select 
+                      className="w-full p-2.5 border rounded-xl bg-white" 
+                      value={newMember.padrinoMadrina}
+                      onChange={(e) => setNewMember({ ...newMember, padrinoMadrina: e.target.value })}
+                    >
+                      <option value="">Sin padrino registrado</option>
+                      {integrantes.map(i => (
+                        <option key={i.id} value={i.nombre}>{i.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2 border-t">
+                    <button type="button" onClick={() => setShowMemberModal(false)} className="p-2">Cancelar</button>
+                    <button type="submit" className="bg-emerald-600 text-white px-5 py-2 rounded-xl font-bold">Añadir</button>
+                  </div>
+
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* 4. Registrar Cumpleaños */}
+          {showCumpleModal && (
+            <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4">
+                <h3 className="font-bold text-slate-800 text-base">{isEditingCumple ? 'Editar Cumpleaños' : 'Registrar Cumpleaños'}</h3>
+                <form onSubmit={handleSaveCumple} className="space-y-4 text-xs">
+                  <input type="text" required placeholder="Nombre..." className="w-full p-2.5 border rounded-xl" value={newCumple.nombre} onChange={(e) => setNewCumple({ ...newCumple, nombre: e.target.value })} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select className="w-full p-2.5 border rounded-xl bg-white" value={newCumple.dia} onChange={(e) => setNewCumple({ ...newCumple, dia: e.target.value })}>
+                      {Array.from({ length: 31 }, (_, i) => {
+                        const num = String(i + 1).padStart(2, '0');
+                        return <option key={num} value={num}>{num}</option>;
+                      })}
+                    </select>
+                    <select className="w-full p-2.5 border rounded-xl bg-white" value={newCumple.mes} onChange={(e) => setNewCumple({ ...newCumple, mes: e.target.value })}>
+                      {Array.from({ length: 12 }, (_, i) => {
+                        const num = String(i + 1).padStart(2, '0');
+                        return <option key={num} value={num}>{obtenerNombreMes(i + 1)}</option>;
+                      })}
+                    </select>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button type="button" onClick={() => { setShowCumpleModal(false); setIsEditingCumple(false); }} className="p-2">Cancelar</button>
+                    <button type="submit" className="bg-pink-600 text-white px-5 py-2 rounded-xl">Guardar</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Navegación móvil inferior fija */}
+          <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around py-2 z-40 shadow-lg">
+            {[
+              { id: 'inicio', label: 'Inicio', icon: Home },
+              { id: 'arbol', label: 'Árbol', icon: Users },
+              { id: 'calendario', label: 'Calendario', icon: CalendarIcon },
+              { id: 'cumples', label: 'Cumples', icon: Gift }
+            ].map(tab => {
+              const Icon = tab.icon;
+              return (
+                <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex flex-col items-center px-2 ${activeTab === tab.id ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}>
+                  <Icon className="w-5 h-5" />
+                  <span className="text-[10px]">{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+    </div>
+  );
+}
+
+```

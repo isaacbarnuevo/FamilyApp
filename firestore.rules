@@ -1,0 +1,19 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // REGLA RECOMENDADA (Segura y funcional con Autenticación):
+    // Permite lectura y escritura a cualquier usuario autenticado (incluye usuarios anónimos de la app)
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // REGLA ALTERNATIVA (Solo si no tienes activada la Autenticación Anónima en Firebase Console):
+    // Permite lectura y escritura públicas sin restricción (Descomentar para usar si la anterior da error)
+    // match /{document=**} {
+    //   allow read, write: if true;
+    // }
+    
+  }
+}
