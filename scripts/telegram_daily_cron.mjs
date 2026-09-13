@@ -179,9 +179,14 @@ export async function runDailyDigest(force = false) {
   if (citasProximas.length > 0) {
     citasProximas.forEach(c => {
       const esHoy = c.fecha === hoyIso;
+      const tieneDetalle = c.quienLleva && c.quienRecoge && c.quienLleva !== c.quienRecoge;
+      const textoLlevaRecoge = tieneDetalle
+        ? `• 🚗 Lleva (Ida): <b>${c.quienLleva}</b>\n• 🚙 Recoge (Vuelta): <b>${c.quienRecoge}</b>\n`
+        : `• 🚗 Acompaña: <b>${c.acompanante && c.acompanante !== 'Pendiente de asignar' ? c.acompanante : '⚠️ ¡Pendiente de asignar!'}</b>\n`;
+
       msg += `🏥 <b>Cita Médica ${esHoy ? 'HOY' : 'MAÑANA'}:</b>\n`;
       msg += `• <b>${c.paciente}</b> tiene cita de <b>${c.especialidad}</b> a las <b>${c.hora || 'hora por confirmar'}</b> en ${c.centro}.\n`;
-      msg += `• 🚗 Acompaña: <b>${c.acompanante && c.acompanante !== 'Pendiente de asignar' ? c.acompanante : '⚠️ ¡Pendiente de asignar!'}</b>\n`;
+      msg += textoLlevaRecoge;
       if (c.notas) msg += `• 📋 <i>${c.notas}</i>\n`;
       msg += '\n';
     });
