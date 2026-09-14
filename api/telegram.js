@@ -355,6 +355,8 @@ export default async function handler(req, res) {
         const { cumpleanos } = await obtenerDatosFirestore();
         const mesActualNum = hMes;
         const nombreMesActual = MESES[mesActualNum - 1];
+        const mesSiguienteNum = hMes === 12 ? 1 : hMes + 1;
+        const nombreMesSiguiente = MESES[mesSiguienteNum - 1];
 
         const cumplesDelMes = cumpleanos
           .filter(c => {
@@ -362,6 +364,20 @@ export default async function handler(req, res) {
             const parts = c.fecha.split('-');
             const m = parts.length === 3 ? parseInt(parts[1], 10) : parseInt(parts[0], 10);
             return m === mesActualNum;
+          })
+          .map(c => {
+            const parts = c.fecha.split('-');
+            const d = parts.length === 3 ? parseInt(parts[2], 10) : parseInt(parts[1], 10);
+            return { ...c, dia: d };
+          })
+          .sort((a, b) => a.dia - b.dia);
+
+        const cumplesMesSiguiente = cumpleanos
+          .filter(c => {
+            if (!c.fecha || !c.fecha.includes('-')) return false;
+            const parts = c.fecha.split('-');
+            const m = parts.length === 3 ? parseInt(parts[1], 10) : parseInt(parts[0], 10);
+            return m === mesSiguienteNum;
           })
           .map(c => {
             const parts = c.fecha.split('-');
@@ -379,7 +395,16 @@ export default async function handler(req, res) {
             const esHoy = c.dia === hDia;
             const pasado = c.dia < hDia;
             const icono = esHoy ? '🎉' : pasado ? '✅' : '⏳';
-            resp += `${icono} <b>${c.dia} de ${nombreMesActual}</b> — <b>${c.nombre}</b>${esHoy ? ' 🚨 <b>¡HOY!</b>' : ''}\n`;
+            const tag = esHoy ? ' 🚨 <b>¡HOY!</b>' : pasado ? ' <i>(Pasado)</i>' : ` <i>(Faltan ${c.dia - hDia} días)</i>`;
+            resp += `${icono} <b>${c.dia} de ${nombreMesActual}</b> — <b>${c.nombre}</b>${tag}\n`;
+          });
+          resp += '\n';
+        }
+
+        if (cumplesMesSiguiente.length > 0) {
+          resp += `🔮 <b>Próximos en ${nombreMesSiguiente}:</b>\n`;
+          cumplesMesSiguiente.forEach(c => {
+            resp += `• <b>${c.dia} de ${nombreMesSiguiente}</b> — <b>${c.nombre}</b>\n`;
           });
           resp += '\n';
         }
@@ -391,35 +416,89 @@ export default async function handler(req, res) {
 
       case '/santos': {
         const { integrantes, cumpleanos } = await obtenerDatosFirestore();
+        const nombreMesActual = MESES[hMes - 1];
+        const mesSiguienteNum = hMes === 12 ? 1 : hMes + 1;
+        const anoSiguiente = hMes === 12 ? hAno + 1 : hAno;
+        const nombreMesSiguiente = MESES[mesSiguienteNum - 1];
 
-        // Buscar santos de hoy y próximos 7 días
-        const santosProximos = [];
-        for (let i = 0; i <= 7; i++) {
-          const f = new Date(hoyObj.getTime() + i * 24 * 60 * 60 * 1000);
-          const dia = f.getDate();
-          const mesNom = MESES[f.getMonth()];
+        const diasEnMesActual = new Date(hAno, hMes, 0).getDate();
+        const todosMiembrosYSantos = [];
+        const nombresVistos = new Set();
 
-          integrantes.forEach(ing => {
-            if (ing.santo && matchesSaintDate(ing.santo, f)) {
-              santosProximos.push({ nombre: ing.nombre, dia, mesNom, diff: i });
-            }
-          });
-          cumpleanos.forEach(c => {
-            if (c.santo && matchesSaintDate(c.santo, f) && !santosProximos.some(s => s.nombre === c.nombre && s.diff === i)) {
-              santosProximos.push({ nombre: c.nombre, dia, mesNom, diff: i });
+        integrantes.forEach(i => {
+          if (i.santo && !nombresVistos.has(i.nombre)) {
+            todosMiembrosYSantos.push({ nombre: i.nombre, santo: i.santo });
+            nombresVistos.add(i.nombre);
+          }
+        });
+        cumpleanos.forEach(c => {
+          if (c.santo && !nombresVistos.has(c.nombre)) {
+            todosMiembrosYSantos.push({ nombre: c.nombre, santo: c.santo });
+            nombresVistos.add(c.nombre);
+          }
+        });
+
+        const santosMesActual = [];
+        for (let d = 1; d <= diasEnMesActual; d++) {
+          const f = new Date(hAno, hMes - 1, d);
+          todosMiembrosYSantos.forEach(item => {
+            if (matchesSaintDate(item.santo, f)) {
+              santosMesActual.push({
+                nombre: item.nombre,
+                dia: d,
+                mesNom: nombreMesActual,
+                santoDesc: item.santo,
+                esHoy: d === hDia,
+                pasado: d < hDia,
+                diffDias: d - hDia
+              });
             }
           });
         }
 
-        let resp = `✨ <b>Santos de esta semana:</b>\n\n`;
-        if (santosProximos.length === 0) {
-          resp += `No hay santos registrados para esta semana.\n\n`;
+        // Santos del próximo mes para prever
+        const diasEnMesSiguiente = new Date(anoSiguiente, mesSiguienteNum, 0).getDate();
+        const santosMesSiguiente = [];
+        for (let d = 1; d <= diasEnMesSiguiente; d++) {
+          const f = new Date(anoSiguiente, mesSiguienteNum - 1, d);
+          todosMiembrosYSantos.forEach(item => {
+            if (matchesSaintDate(item.santo, f)) {
+              santosMesSiguiente.push({
+                nombre: item.nombre,
+                dia: d,
+                mesNom: nombreMesSiguiente,
+                santoDesc: item.santo
+              });
+            }
+          });
+        }
+
+        let resp = `✨ <b>Santos de ${nombreMesActual.toUpperCase()} (${santosMesActual.length}):</b>\n\n`;
+
+        if (santosMesActual.length === 0) {
+          resp += `No hay santos registrados en el mes de ${nombreMesActual}.\n\n`;
         } else {
-          santosProximos.forEach(s => {
-            const esHoy = s.diff === 0;
-            const esManana = s.diff === 1;
-            const tag = esHoy ? '🚨 <b>¡HOY!</b>' : esManana ? '⏳ Mañana' : `En ${s.diff} días`;
-            resp += `• <b>${s.nombre}</b>: ${s.dia} de ${s.mesNom} (${tag})\n`;
+          santosMesActual.forEach(s => {
+            let tag = '';
+            let icono = '⏳';
+            if (s.esHoy) {
+              tag = ' 🚨 <b>¡HOY!</b>';
+              icono = '🎉';
+            } else if (s.pasado) {
+              tag = ' <i>(Pasado)</i>';
+              icono = '✅';
+            } else {
+              tag = s.diffDias === 1 ? ' (Mañana)' : ` (En ${s.diffDias} días)`;
+            }
+            resp += `${icono} <b>${s.dia} de ${s.mesNom}</b> — <b>${s.nombre}</b>${tag}\n`;
+          });
+          resp += '\n';
+        }
+
+        if (santosMesSiguiente.length > 0) {
+          resp += `🔮 <b>Próximos en ${nombreMesSiguiente}:</b>\n`;
+          santosMesSiguiente.forEach(s => {
+            resp += `• <b>${s.dia} de ${s.mesNom}</b> — <b>${s.nombre}</b>\n`;
           });
           resp += '\n';
         }
