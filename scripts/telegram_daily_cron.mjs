@@ -162,35 +162,103 @@ export async function runDailyDigest(force = false) {
     return { enviado: false, motivo: 'sin_eventos_hoy' };
   }
 
+  function normalizarHora(hora, momentoDia) {
+    if (hora && /^\d{1,2}:\d{2}$/.test(hora.trim())) {
+      const [h, m] = hora.trim().split(':');
+      return `${h.padStart(2, '0')}:${m}`;
+    }
+    const m = (momentoDia || '').toLowerCase();
+    if (m.includes('mañana') || m.includes('manana')) return '10:00';
+    if (m.includes('mediodía') || m.includes('mediodia')) return '14:00';
+    if (m.includes('tarde')) return '18:00';
+    if (m.includes('noche')) return '21:00';
+    return '23:59';
+  }
+
+  // Agrupar y ordenar cronológicamente
+  const itemsAgenda = [];
+
+  trasladosProximos.forEach(t => {
+    const esHoy = t.fecha === hoyIso;
+    itemsAgenda.push({
+      tipo: 'traslado',
+      esHoy,
+      horaSort: normalizarHora(t.hora, t.momentoDia),
+      data: t
+    });
+  });
+
+  citasProximas.forEach(c => {
+    const esHoy = c.fecha === hoyIso;
+    itemsAgenda.push({
+      tipo: 'cita',
+      esHoy,
+      horaSort: normalizarHora(c.hora),
+      data: c
+    });
+  });
+
+  eventosProximos.forEach(e => {
+    const esHoy = e.fecha === hoyIso;
+    itemsAgenda.push({
+      tipo: 'evento',
+      esHoy,
+      horaSort: normalizarHora(e.hora),
+      data: e
+    });
+  });
+
+  const itemsHoy = itemsAgenda.filter(i => i.esHoy).sort((a, b) => a.horaSort.localeCompare(b.horaSort));
+  const itemsManana = itemsAgenda.filter(i => !i.esHoy).sort((a, b) => a.horaSort.localeCompare(b.horaSort));
+
+  function renderItem(item) {
+    let out = '';
+    const esHoy = item.esHoy;
+    const tagDia = esHoy ? 'HOY' : 'MAÑANA';
+
+    if (item.tipo === 'cita') {
+      const c = item.data;
+      const horaTxt = c.hora ? ` a las <b>${c.hora}</b>` : '';
+      const tieneDetalle = c.quienLleva && c.quienRecoge && c.quienLleva !== c.quienRecoge;
+      let textoLlevaRecoge = '';
+      if (c.noNecesitaAcompanante || c.acompanante === 'No necesita acompañante') {
+        textoLlevaRecoge = `• 🚶 <i>No necesita acompañante (va solo/a)</i>\n`;
+      } else if (tieneDetalle) {
+        textoLlevaRecoge = `• 🚗 Lleva (Ida): <b>${c.quienLleva}</b>\n• 🚙 Recoge (Vuelta): <b>${c.quienRecoge}</b>\n`;
+      } else {
+        const persona = c.quienLleva || c.acompanante;
+        const tiene = persona && persona !== 'Pendiente de asignar';
+        textoLlevaRecoge = `• 🚗 Acompaña: <b>${tiene ? persona : '⚠️ ¡Pendiente de asignar!'}</b>\n`;
+      }
+
+      out += `🏥 <b>Cita Médica ${tagDia}:</b>\n`;
+      out += `• <b>${c.paciente || 'Papá (Jaime)'}</b> tiene cita de <b>${c.especialidad || 'Consulta'}</b>${horaTxt}` + (c.centro ? ` en ${c.centro}` : '') + `.\n`;
+      out += textoLlevaRecoge;
+      if (c.notas) out += `• 📋 <i>${c.notas}</i>\n`;
+      out += '\n';
+    } else if (item.tipo === 'traslado') {
+      const t = item.data;
+      const horaTxt = t.hora ? ` (${t.hora})` : (t.momentoDia ? ` (${t.momentoDia})` : '');
+      const sinConductor = !t.conductor || t.conductor === 'Pendiente de asignar';
+
+      out += `🚗 <b>Traslado de los Padres ${tagDia}:</b>\n`;
+      out += `• <b>${t.origen} ➔ ${t.destino}</b>${horaTxt}\n`;
+      out += `• 👤 Conductor: <b>${sinConductor ? '⚠️ ¡Pendiente de conductor!' : t.conductor}</b>\n`;
+      if (t.opciones && t.opciones.length > 1) {
+        out += `• 💡 <i>Opciones:</i> ` + t.opciones.map(o => `${o.conductor} (${o.hora})${o.esElegida ? ' ⭐' : ''}`).join(', ') + `\n`;
+      }
+      if (t.notas) out += `• 📋 <i>${t.notas}</i>\n`;
+      out += '\n';
+    } else if (item.tipo === 'evento') {
+      const e = item.data;
+      out += `📅 <b>Recordatorio:</b> ${esHoy ? '¡Hoy' : '¡Mañana'} tenemos <b>${e.titulo}</b>${e.hora ? ` (${e.hora})` : ''}` + (e.lugar ? ` en ${e.lugar}` : '') + `!\n\n`;
+    }
+
+    return out;
+  }
+
   // 3. Construir mensaje
   let msg = `☀️ <b>¡Buenos días Familia Barnuevo!</b>\n\n`;
-
-  if (trasladosProximos.length > 0) {
-    trasladosProximos.forEach(t => {
-      const esHoy = t.fecha === hoyIso;
-      msg += `🚗 <b>Traslado de los Padres ${esHoy ? 'HOY' : 'MAÑANA'}:</b>\n`;
-      msg += `• <b>${t.origen} ➔ ${t.destino}</b> (${t.hora || t.momentoDia || 'Horario a concretar'})\n`;
-      msg += `• 👤 Conductor: <b>${t.conductor && t.conductor !== 'Pendiente de asignar' ? t.conductor : '⚠️ ¡Pendiente de conductor!'}</b>\n`;
-      if (t.notas) msg += `• 📋 <i>${t.notas}</i>\n`;
-      msg += '\n';
-    });
-  }
-
-  if (citasProximas.length > 0) {
-    citasProximas.forEach(c => {
-      const esHoy = c.fecha === hoyIso;
-      const tieneDetalle = c.quienLleva && c.quienRecoge && c.quienLleva !== c.quienRecoge;
-      const textoLlevaRecoge = tieneDetalle
-        ? `• 🚗 Lleva (Ida): <b>${c.quienLleva}</b>\n• 🚙 Recoge (Vuelta): <b>${c.quienRecoge}</b>\n`
-        : `• 🚗 Acompaña: <b>${c.acompanante && c.acompanante !== 'Pendiente de asignar' ? c.acompanante : '⚠️ ¡Pendiente de asignar!'}</b>\n`;
-
-      msg += `🏥 <b>Cita Médica ${esHoy ? 'HOY' : 'MAÑANA'}:</b>\n`;
-      msg += `• <b>${c.paciente}</b> tiene cita de <b>${c.especialidad}</b> a las <b>${c.hora || 'hora por confirmar'}</b> en ${c.centro}.\n`;
-      msg += textoLlevaRecoge;
-      if (c.notas) msg += `• 📋 <i>${c.notas}</i>\n`;
-      msg += '\n';
-    });
-  }
 
   if (cumplesDeHoy.length > 0) {
     cumplesDeHoy.forEach(c => {
@@ -206,12 +274,18 @@ export async function runDailyDigest(force = false) {
     msg += '\n';
   }
 
-  if (eventosProximos.length > 0) {
-    eventosProximos.forEach(e => {
-      const esHoy = e.fecha === hoyIso;
-      msg += `📅 <b>Recordatorio:</b> ${esHoy ? '¡Hoy' : '¡Mañana'} tenemos <b>${e.titulo}</b> (${e.hora || ''}) en ${e.lugar}!\n`;
+  // Primero lo de HOY por estricto orden horario
+  if (itemsHoy.length > 0) {
+    itemsHoy.forEach(item => {
+      msg += renderItem(item);
     });
-    msg += '\n';
+  }
+
+  // Luego la previsión de MAÑANA por orden horario
+  if (itemsManana.length > 0) {
+    itemsManana.forEach(item => {
+      msg += renderItem(item);
+    });
   }
 
   msg += `👉 <a href="https://familiabarnuevoapp.web.app">Abrir App Familiar</a>`;

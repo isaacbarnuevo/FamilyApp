@@ -256,8 +256,26 @@ export default async function handler(req, res) {
       case '/hoy': {
         const { citasMedicas, trasladosPadres, cumpleanos, integrantes } = await obtenerDatosFirestore();
 
+        const normalizarHora = (hora, momentoDia) => {
+          if (hora && /^\d{1,2}:\d{2}$/.test(hora.trim())) {
+            const [h, m] = hora.trim().split(':');
+            return `${h.padStart(2, '0')}:${m}`;
+          }
+          const m = (momentoDia || '').toLowerCase();
+          if (m.includes('mañana') || m.includes('manana')) return '10:00';
+          if (m.includes('mediodía') || m.includes('mediodia')) return '14:00';
+          if (m.includes('tarde')) return '18:00';
+          if (m.includes('noche')) return '21:00';
+          return '23:59';
+        };
+
         const trasladosHoy = trasladosPadres.filter(t => t.fecha === hoyIso && t.estado !== 'realizado');
         const citasHoy = citasMedicas.filter(c => c.fecha === hoyIso && c.estado !== 'completada');
+
+        const itemsHoy = [
+          ...trasladosHoy.map(t => ({ tipo: 'traslado', horaSort: normalizarHora(t.hora, t.momentoDia), data: t })),
+          ...citasHoy.map(c => ({ tipo: 'cita', horaSort: normalizarHora(c.hora), data: c }))
+        ].sort((a, b) => a.horaSort.localeCompare(b.horaSort));
 
         const cumplesHoy = cumpleanos.filter(c => {
           if (!c.fecha || !c.fecha.includes('-')) return false;
@@ -287,24 +305,44 @@ export default async function handler(req, res) {
           resp += `✨ <b>¡Santos de hoy!</b>\n` + santosHoy.map(n => `• ¡Santo de <b>${n}</b>! 🎊`).join('\n') + `\n\n`;
         }
 
-        if (trasladosHoy.length > 0) {
-          resp += `🚗 <b>Traslados para hoy:</b>\n`;
-          trasladosHoy.forEach(t => {
-            resp += `• <b>${t.origen} ➔ ${t.destino}</b> a las <b>${t.hora || t.momentoDia}</b> (Conductor: <b>${t.conductor || '⚠️ Sin asignar'}</b>)\n`;
+        if (itemsHoy.length > 0) {
+          itemsHoy.forEach((item, idx) => {
+            if (item.tipo === 'cita') {
+              const c = item.data;
+              const horaTxt = c.hora ? ` a las <b>${c.hora}</b>` : '';
+              const tieneDetalle = c.quienLleva && c.quienRecoge && c.quienLleva !== c.quienRecoge;
+              let textoLlevaRecoge = '';
+              if (c.noNecesitaAcompanante || c.acompanante === 'No necesita acompañante') {
+                textoLlevaRecoge = `• 🚶 <i>No necesita acompañante</i>\n`;
+              } else if (tieneDetalle) {
+                textoLlevaRecoge = `• 🚗 Lleva (Ida): <b>${c.quienLleva}</b>\n• 🚙 Recoge (Vuelta): <b>${c.quienRecoge}</b>\n`;
+              } else {
+                const persona = c.quienLleva || c.acompanante;
+                const tiene = persona && persona !== 'Pendiente de asignar';
+                textoLlevaRecoge = `• 🚗 Acompaña: <b>${tiene ? persona : '⚠️ ¡Pendiente de asignar!'}</b>\n`;
+              }
+
+              resp += `🏥 <b>Cita Médica HOY:</b>\n` +
+                `• <b>${c.paciente || 'Papá (Jaime)'}</b> tiene cita de <b>${c.especialidad || 'Consulta'}</b>${horaTxt}` + (c.centro ? ` en ${c.centro}` : '') + `.\n` +
+                textoLlevaRecoge +
+                (c.notas ? `• 📋 <i>${c.notas}</i>\n` : '') +
+                `\n`;
+            } else if (item.tipo === 'traslado') {
+              const t = item.data;
+              const horaTxt = t.hora ? ` (${t.hora})` : (t.momentoDia ? ` (${t.momentoDia})` : '');
+              const sinConductor = !t.conductor || t.conductor === 'Pendiente de asignar';
+
+              resp += `🚗 <b>Traslado de los Padres HOY:</b>\n` +
+                `• <b>${t.origen} ➔ ${t.destino}</b>${horaTxt}\n` +
+                `• 👤 Conductor: <b>${sinConductor ? '⚠️ ¡Pendiente de conductor!' : t.conductor}</b>\n` +
+                (t.opciones && t.opciones.length > 1 ? `• 💡 <i>Opciones:</i> ` + t.opciones.map(o => `${o.conductor} (${o.hora})${o.esElegida ? ' ⭐' : ''}`).join(', ') + `\n` : '') +
+                (t.notas ? `• 📋 <i>${t.notas}</i>\n` : '') +
+                `\n`;
+            }
           });
-          resp += '\n';
         }
 
-        if (citasHoy.length > 0) {
-          resp += `🏥 <b>Citas médicas para hoy:</b>\n`;
-          citasHoy.forEach(c => {
-            const quien = c.quienLleva || c.acompanante || (c.noNecesitaAcompanante ? 'No necesita' : '⚠️ Sin asignar');
-            resp += `• <b>${c.paciente}</b>: ${c.especialidad} (${c.hora || 'hora por confirmar'}) en ${c.centro}. Acompaña: <b>${quien}</b>\n`;
-          });
-          resp += '\n';
-        }
-
-        if (cumplesHoy.length === 0 && santosHoy.length === 0 && trasladosHoy.length === 0 && citasHoy.length === 0) {
+        if (cumplesHoy.length === 0 && santosHoy.length === 0 && itemsHoy.length === 0) {
           resp += `🏖️ ¡Día tranquilo! No hay traslados, citas médicas ni celebraciones programadas para hoy.\n\n`;
         }
 
