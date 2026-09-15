@@ -298,7 +298,17 @@ export default async function handler(req, res) {
         let resp = `☀️ <b>Previsión para HOY (${formatearFechaBonita(hoyIso)}):</b>\n\n`;
 
         if (cumplesHoy.length > 0) {
-          resp += `🎂 <b>¡Cumpleaños de hoy!</b>\n` + cumplesHoy.map(c => `• ¡Felicidades a <b>${c.nombre}</b>! 🎉`).join('\n') + `\n\n`;
+          resp += `🎂 <b>¡Cumpleaños de hoy!</b>\n` + cumplesHoy.map(c => {
+            const miembro = integrantes.find(i => i.nombre?.toLowerCase().trim() === c.nombre?.toLowerCase().trim());
+            let edadTxt = '';
+            if (miembro && miembro.fechaNacimiento) {
+              const anoNac = parseInt(miembro.fechaNacimiento.split('-')[0], 10);
+              if (!isNaN(anoNac)) {
+                edadTxt = ` (¡Cumple <b>${hAno - anoNac} años</b>! 🎈)`;
+              }
+            }
+            return `• ¡Felicidades a <b>${c.nombre}</b>!${edadTxt} 🎉`;
+          }).join('\n') + `\n\n`;
         }
 
         if (santosHoy.length > 0) {
@@ -352,10 +362,11 @@ export default async function handler(req, res) {
       }
 
       case '/cumples': {
-        const { cumpleanos } = await obtenerDatosFirestore();
+        const { cumpleanos, integrantes } = await obtenerDatosFirestore();
         const mesActualNum = hMes;
         const nombreMesActual = MESES[mesActualNum - 1];
         const mesSiguienteNum = hMes === 12 ? 1 : hMes + 1;
+        const anoSiguiente = hMes === 12 ? hAno + 1 : hAno;
         const nombreMesSiguiente = MESES[mesSiguienteNum - 1];
 
         const cumplesDelMes = cumpleanos
@@ -392,11 +403,19 @@ export default async function handler(req, res) {
           resp += `No hay cumpleaños registrados en el mes de ${nombreMesActual}.\n\n`;
         } else {
           cumplesDelMes.forEach(c => {
+            const miembro = integrantes.find(i => i.nombre?.toLowerCase().trim() === c.nombre?.toLowerCase().trim());
+            let edadTxt = '';
+            if (miembro && miembro.fechaNacimiento) {
+              const anoNac = parseInt(miembro.fechaNacimiento.split('-')[0], 10);
+              if (!isNaN(anoNac)) {
+                edadTxt = ` <i>(Cumple ${hAno - anoNac} años)</i>`;
+              }
+            }
             const esHoy = c.dia === hDia;
             const pasado = c.dia < hDia;
             const icono = esHoy ? '🎉' : pasado ? '✅' : '⏳';
             const tag = esHoy ? ' 🚨 <b>¡HOY!</b>' : pasado ? ' <i>(Pasado)</i>' : ` <i>(Faltan ${c.dia - hDia} días)</i>`;
-            resp += `${icono} <b>${c.dia} de ${nombreMesActual}</b> — <b>${c.nombre}</b>${tag}\n`;
+            resp += `${icono} <b>${c.dia} de ${nombreMesActual}</b> — <b>${c.nombre}</b>${edadTxt}${tag}\n`;
           });
           resp += '\n';
         }
@@ -404,7 +423,15 @@ export default async function handler(req, res) {
         if (cumplesMesSiguiente.length > 0) {
           resp += `🔮 <b>Próximos en ${nombreMesSiguiente}:</b>\n`;
           cumplesMesSiguiente.forEach(c => {
-            resp += `• <b>${c.dia} de ${nombreMesSiguiente}</b> — <b>${c.nombre}</b>\n`;
+            const miembro = integrantes.find(i => i.nombre?.toLowerCase().trim() === c.nombre?.toLowerCase().trim());
+            let edadTxt = '';
+            if (miembro && miembro.fechaNacimiento) {
+              const anoNac = parseInt(miembro.fechaNacimiento.split('-')[0], 10);
+              if (!isNaN(anoNac)) {
+                edadTxt = ` <i>(Cumple ${anoSiguiente - anoNac} años)</i>`;
+              }
+            }
+            resp += `• <b>${c.dia} de ${nombreMesSiguiente}</b> — <b>${c.nombre}</b>${edadTxt}\n`;
           });
           resp += '\n';
         }

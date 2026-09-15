@@ -81,6 +81,19 @@ export async function runDailyDigest(force = false) {
 
   console.log(`Fecha evaluada (Madrid): ${hoyIso} (Día: ${hDia}, Mes: ${hMes})`);
 
+  // Salvaguarda horaria: No enviar antes de las 07:00 AM hora de España
+  const partsHora = new Intl.DateTimeFormat('es-ES', {
+    timeZone: 'Europe/Madrid',
+    hour: 'numeric',
+    hour12: false
+  }).formatToParts(new Date()).find(p => p.type === 'hour')?.value;
+  const horaMadrid = parseInt(partsHora, 10);
+
+  if (!force && horaMadrid < 7) {
+    console.log(`[Hora en Madrid: ${horaMadrid}:00] Es antes de las 07:00 AM. No se envía el aviso para no molestar a horas intempestivas.`);
+    return { enviado: false, motivo: 'demasiado_temprano_antes_de_las_7' };
+  }
+
   // Comprobar si ya se envió hoy
   if (!force) {
     try {
@@ -262,7 +275,16 @@ export async function runDailyDigest(force = false) {
 
   if (cumplesDeHoy.length > 0) {
     cumplesDeHoy.forEach(c => {
-      msg += `🎂 <b>¡Hoy es el cumpleaños de ${c.nombre}!</b> 🎉 ¡Muchísimas felicidades!\n`;
+      const miembro = integrantes.find(i => i.nombre?.toLowerCase().trim() === c.nombre?.toLowerCase().trim());
+      let edadTxt = '';
+      if (miembro && miembro.fechaNacimiento) {
+        const anoNac = parseInt(miembro.fechaNacimiento.split('-')[0], 10);
+        if (!isNaN(anoNac)) {
+          const edad = hAno - anoNac;
+          edadTxt = ` (¡Cumple <b>${edad} años</b>! 🎈)`;
+        }
+      }
+      msg += `🎂 <b>¡Hoy es el cumpleaños de ${c.nombre}!</b>${edadTxt} 🎉 ¡Muchísimas felicidades!\n`;
     });
     msg += '\n';
   }

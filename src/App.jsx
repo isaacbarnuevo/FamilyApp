@@ -132,7 +132,7 @@ const INTEGRANTES_PREDEFINIDOS = [
 const CUMPLEANOS_PREDEFINIDOS = [
   { nombre: 'Encarnación', fecha: '10-05', parentesco: 'Padres', santo: 'No especificado' },
   { nombre: 'Jaime', fecha: '05-19', parentesco: 'Padres', santo: 'No especificado' },
-  { nombre: 'Rebeca', fecha: '09-15', parentesco: 'Hermana', santo: '30 de Agosto (Santa Rebeca)' },
+  { nombre: 'Rebeca', fecha: '03-16', parentesco: 'Hermana', santo: '30 de Agosto (Santa Rebeca)', fechaNacimiento: '1979-03-16' },
   { nombre: 'Isaac (Isik)', fecha: '06-21', parentesco: 'Hermano', santo: '3 de Junio (San Isaac)' },
   { nombre: 'Mónica', fecha: '10-20', parentesco: 'Cuñada', santo: '27 de Agosto (Santa Mónica)' },
   { nombre: 'María', fecha: '10-22', parentesco: 'Hermana', santo: '12 de Septiembre (Dulce Nombre de María)' },
@@ -1573,6 +1573,10 @@ export default function App() {
     if (!cumpleanos || cumpleanos.length === 0) return;
 
     const hoy = new Date();
+    // Salvaguarda horaria: no enviar nunca de madrugada desde el navegador (solo a partir de las 07:00 AM)
+    if (hoy.getHours() < 7) {
+      return;
+    }
     const hoyIso = getFechaHoyLocal(hoy);
     const lastCheckKey = 'last_telegram_digest_date';
     const lastDateLocal = localStorage.getItem(lastCheckKey);
@@ -1736,7 +1740,16 @@ export default function App() {
 
         if (cumplesDeHoy.length > 0) {
           cumplesDeHoy.forEach(c => {
-            msg += `🎂 <b>¡Hoy es el cumpleaños de ${c.nombre}!</b> 🎉 ¡Muchísimas felicidades!\n`;
+            const miembro = integrantes.find(i => i.nombre?.toLowerCase().trim() === c.nombre?.toLowerCase().trim());
+            let edadTxt = '';
+            if (miembro && miembro.fechaNacimiento) {
+              const anoNac = parseInt(miembro.fechaNacimiento.split('-')[0], 10);
+              if (!isNaN(anoNac)) {
+                const edad = hoy.getFullYear() - anoNac;
+                edadTxt = ` (¡Cumple <b>${edad} años</b>! 🎈)`;
+              }
+            }
+            msg += `🎂 <b>¡Hoy es el cumpleaños de ${c.nombre}!</b>${edadTxt} 🎉 ¡Muchísimas felicidades!\n`;
           });
           msg += '\n';
         }
