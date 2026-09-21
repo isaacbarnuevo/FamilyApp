@@ -1743,7 +1743,23 @@ export default function App() {
         return diffDias >= 0 && diffDias <= 1;
       });
 
-      if (cumplesDeHoy.length > 0 || santosDeHoy.length > 0 || eventosProximos.length > 0 || citasProximas.length > 0 || trasladosProximos.length > 0) {
+      const vacsActivas = [];
+      const vacsProximas = [];
+      (vacaciones || []).forEach(v => {
+        if (!v.fechaInicio) return;
+        const fIni = v.fechaInicio;
+        const fFin = v.fechaFin || v.fechaInicio;
+        if (hoyIso >= fIni && hoyIso <= fFin) {
+          vacsActivas.push(v);
+        } else if (fIni > hoyIso) {
+          const diff = Math.round((new Date(fIni).getTime() - new Date(hoyIso).getTime()) / (1000 * 60 * 60 * 24));
+          if (diff <= 3) {
+            vacsProximas.push({ ...v, diffDias: diff });
+          }
+        }
+      });
+
+      if (cumplesDeHoy.length > 0 || santosDeHoy.length > 0 || eventosProximos.length > 0 || citasProximas.length > 0 || trasladosProximos.length > 0 || vacsActivas.length > 0 || vacsProximas.length > 0) {
         const normalizarHora = (hora, momentoDia) => {
           if (hora && /^\d{1,2}:\d{2}$/.test(hora.trim())) {
             const [h, m] = hora.trim().split(':');
@@ -1872,6 +1888,24 @@ export default function App() {
         if (itemsManana.length > 0) {
           itemsManana.forEach(item => {
             msg += renderItem(item);
+          });
+        }
+
+        // Avisos de Vacaciones
+        if (vacsProximas.length > 0) {
+          vacsProximas.forEach(v => {
+            const cuando = v.diffDias === 1 ? '¡Mañana' : (v.diffDias === 0 ? '¡Hoy' : `En ${v.diffDias} días`);
+            const quienes = v.quienes && v.quienes.length > 0 ? v.quienes.join(', ') : 'La familia';
+            msg += `🏖️ <b>¡Vacaciones Próximas!</b> ${cuando} comienzan las vacaciones en <b>${v.lugar}</b> (${quienes}).\n`;
+            if (v.nota) msg += `• 📝 <i>"${v.nota}"</i>\n`;
+            msg += '\n';
+          });
+        }
+
+        if (vacsActivas.length > 0) {
+          vacsActivas.forEach(v => {
+            const quienes = v.quienes && v.quienes.length > 0 ? v.quienes.join(', ') : 'La familia';
+            msg += `🌴 <b>¡Actualmente de Vacaciones!</b> En <b>${v.lugar}</b> (${quienes}).\n\n`;
           });
         }
 
@@ -2526,6 +2560,13 @@ export default function App() {
           await addDoc(col, vacData);
           triggerToast('☀️ ¡Vacaciones creadas en la nube familiar!');
         }
+        const accionTxt = isEditingVacation ? 'actualizadas' : 'registradas';
+        const autorTxt = usuarioActivo ? usuarioActivo.split(' ')[0] : 'Alguien';
+        const quienesTxt = (vacData.quienes && vacData.quienes.length > 0) ? vacData.quienes.join(', ') : 'Toda la familia';
+        const periodoTxt = `Del ${formatearFechaStr(vacData.fechaInicio)} al ${formatearFechaStr(vacData.fechaFin)}`;
+        const msgTg = `🏖️ <b>¡Vacaciones familiares ${accionTxt} por ${autorTxt}!</b>\n\n📍 <b>${vacData.lugar}</b>\n📅 Fechas: ${periodoTxt}\n👥 Quiénes: <b>${quienesTxt}</b>\n${vacData.nota ? `📝 <i>"${vacData.nota}"</i>\n` : ''}\n👉 <a href="https://familiabarnuevoapp.web.app">Ver calendario y detalles en la App</a>`;
+        enviarMensajeTelegram(msgTg);
+
         setNewVacation({ lugar: '', ubicacionUrl: '', fechaInicio: '', fechaFin: '', quienes: [], nota: '' });
         setShowVacationModal(false);
         setIsEditingVacation(false);
@@ -2546,6 +2587,14 @@ export default function App() {
         persistLocal('vacaciones', updated);
         triggerToast('☀️ ¡Vacaciones guardadas localmente!');
       }
+
+      const accionTxt = isEditingVacation ? 'actualizadas' : 'registradas';
+      const autorTxt = usuarioActivo ? usuarioActivo.split(' ')[0] : 'Alguien';
+      const quienesTxt = (vacData.quienes && vacData.quienes.length > 0) ? vacData.quienes.join(', ') : 'Toda la familia';
+      const periodoTxt = `Del ${formatearFechaStr(vacData.fechaInicio)} al ${formatearFechaStr(vacData.fechaFin)}`;
+      const msgTg = `🏖️ <b>¡Vacaciones familiares ${accionTxt} por ${autorTxt}!</b>\n\n📍 <b>${vacData.lugar}</b>\n📅 Fechas: ${periodoTxt}\n👥 Quiénes: <b>${quienesTxt}</b>\n${vacData.nota ? `📝 <i>"${vacData.nota}"</i>\n` : ''}\n👉 <a href="https://familiabarnuevoapp.web.app">Ver calendario y detalles en la App</a>`;
+      enviarMensajeTelegram(msgTg);
+
       setNewVacation({ lugar: '', ubicacionUrl: '', fechaInicio: '', fechaFin: '', quienes: [], nota: '' });
       setShowVacationModal(false);
       setIsEditingVacation(false);

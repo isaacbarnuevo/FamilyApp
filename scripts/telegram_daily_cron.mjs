@@ -114,13 +114,15 @@ export async function runDailyDigest(force = false) {
   const colEventos = collection(db, 'artifacts', APP_ID, 'public', 'data', 'eventos');
   const colCitas = collection(db, 'artifacts', APP_ID, 'public', 'data', 'citasMedicas');
   const colTraslados = collection(db, 'artifacts', APP_ID, 'public', 'data', 'trasladosPadres');
+  const colVacaciones = collection(db, 'artifacts', APP_ID, 'public', 'data', 'vacaciones');
 
-  const [snapCumples, snapMiembros, snapEventos, snapCitas, snapTraslados] = await Promise.all([
+  const [snapCumples, snapMiembros, snapEventos, snapCitas, snapTraslados, snapVacaciones] = await Promise.all([
     getDocs(colCumples),
     getDocs(colMiembros),
     getDocs(colEventos),
     getDocs(colCitas),
-    getDocs(colTraslados)
+    getDocs(colTraslados),
+    getDocs(colVacaciones)
   ]);
 
   const cumpleanos = snapCumples.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -128,6 +130,7 @@ export async function runDailyDigest(force = false) {
   const eventos = snapEventos.docs.map(d => ({ id: d.id, ...d.data() }));
   const citasMedicas = snapCitas.docs.map(d => ({ id: d.id, ...d.data() }));
   const trasladosPadres = snapTraslados.docs.map(d => ({ id: d.id, ...d.data() }));
+  const vacaciones = snapVacaciones.docs.map(d => ({ id: d.id, ...d.data() }));
 
   // 2. Filtrar celebraciones y avisos de hoy y mañana
   const cumplesDeHoy = cumpleanos.filter(c => {
@@ -307,6 +310,41 @@ export async function runDailyDigest(force = false) {
   if (itemsManana.length > 0) {
     itemsManana.forEach(item => {
       msg += renderItem(item);
+    });
+  }
+
+  // Avisos de Vacaciones
+  const vacsActivas = [];
+  const vacsProximas = [];
+
+  (vacaciones || []).forEach(v => {
+    if (!v.fechaInicio) return;
+    const fIni = v.fechaInicio;
+    const fFin = v.fechaFin || v.fechaInicio;
+    if (hoyIso >= fIni && hoyIso <= fFin) {
+      vacsActivas.push(v);
+    } else if (fIni > hoyIso) {
+      const diff = Math.round((new Date(fIni).getTime() - new Date(hoyIso).getTime()) / (1000 * 60 * 60 * 24));
+      if (diff <= 3) {
+        vacsProximas.push({ ...v, diffDias: diff });
+      }
+    }
+  });
+
+  if (vacsProximas.length > 0) {
+    vacsProximas.forEach(v => {
+      const cuando = v.diffDias === 1 ? '¡Mañana' : (v.diffDias === 0 ? '¡Hoy' : `En ${v.diffDias} días`);
+      const quienes = v.quienes && v.quienes.length > 0 ? v.quienes.join(', ') : 'La familia';
+      msg += `🏖️ <b>¡Vacaciones Próximas!</b> ${cuando} comienzan las vacaciones en <b>${v.lugar}</b> (${quienes}).\n`;
+      if (v.nota) msg += `• 📝 <i>"${v.nota}"</i>\n`;
+      msg += '\n';
+    });
+  }
+
+  if (vacsActivas.length > 0) {
+    vacsActivas.forEach(v => {
+      const quienes = v.quienes && v.quienes.length > 0 ? v.quienes.join(', ') : 'La familia';
+      msg += `🌴 <b>¡Actualmente de Vacaciones!</b> En <b>${v.lugar}</b> (${quienes}).\n\n`;
     });
   }
 

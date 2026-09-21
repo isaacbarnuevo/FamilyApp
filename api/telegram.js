@@ -359,7 +359,7 @@ export default async function handler(req, res) {
       }
 
       case '/hoy': {
-        const { citasMedicas, trasladosPadres, cumpleanos, integrantes } = await obtenerDatosFirestore();
+        const { citasMedicas, trasladosPadres, cumpleanos, integrantes, eventos, vacaciones } = await obtenerDatosFirestore();
 
         const normalizarHora = (hora, momentoDia) => {
           if (hora && /^\d{1,2}:\d{2}$/.test(hora.trim())) {
@@ -376,10 +376,16 @@ export default async function handler(req, res) {
 
         const trasladosHoy = trasladosPadres.filter(t => t.fecha === hoyIso && t.estado !== 'realizado');
         const citasHoy = citasMedicas.filter(c => c.fecha === hoyIso && c.estado !== 'completada');
+        const eventosHoy = (eventos || []).filter(e => {
+          if (e.fecha === hoyIso) return true;
+          if (e.fechaInicio && e.fechaFin && hoyIso >= e.fechaInicio && hoyIso <= e.fechaFin) return true;
+          return false;
+        });
 
         const itemsHoy = [
           ...trasladosHoy.map(t => ({ tipo: 'traslado', horaSort: normalizarHora(t.hora, t.momentoDia), data: t })),
-          ...citasHoy.map(c => ({ tipo: 'cita', horaSort: normalizarHora(c.hora), data: c }))
+          ...citasHoy.map(c => ({ tipo: 'cita', horaSort: normalizarHora(c.hora), data: c })),
+          ...eventosHoy.map(e => ({ tipo: 'evento', horaSort: normalizarHora(e.hora), data: e }))
         ].sort((a, b) => a.horaSort.localeCompare(b.horaSort));
 
         const cumplesHoy = cumpleanos.filter(c => {
@@ -453,12 +459,52 @@ export default async function handler(req, res) {
                 (t.opciones && t.opciones.length > 1 ? `• 💡 <i>Opciones:</i> ` + t.opciones.map(o => `${o.conductor} (${o.hora})${o.esElegida ? ' ⭐' : ''}`).join(', ') + `\n` : '') +
                 (t.notas ? `• 📋 <i>${t.notas}</i>\n` : '') +
                 `\n`;
+            } else if (item.tipo === 'evento') {
+              const e = item.data;
+              resp += `🍖 <b>Evento / Quedada HOY:</b>\n` +
+                `• <b>${e.titulo}</b>${e.hora ? ` (${e.hora})` : ''}` + (e.lugar ? ` en ${e.lugar}` : '') + `\n` +
+                (e.descripcion ? `• 📋 <i>"${e.descripcion}"</i>\n` : '') +
+                `\n`;
             }
           });
         }
 
-        if (cumplesHoy.length === 0 && santosHoy.length === 0 && itemsHoy.length === 0) {
-          resp += `🏖️ ¡Día tranquilo! No hay traslados, citas médicas ni celebraciones programadas para hoy.\n\n`;
+        // Vacaciones activas o próximas
+        const vacsActivas = [];
+        const vacsProximas = [];
+        (vacaciones || []).forEach(v => {
+          if (!v.fechaInicio) return;
+          const fIni = v.fechaInicio;
+          const fFin = v.fechaFin || v.fechaInicio;
+          if (hoyIso >= fIni && hoyIso <= fFin) {
+            vacsActivas.push(v);
+          } else if (fIni > hoyIso) {
+            const diff = Math.round((new Date(fIni).getTime() - new Date(hoyIso).getTime()) / (1000 * 60 * 60 * 24));
+            if (diff <= 3) {
+              vacsProximas.push({ ...v, diffDias: diff });
+            }
+          }
+        });
+
+        if (vacsProximas.length > 0) {
+          vacsProximas.forEach(v => {
+            const cuando = v.diffDias === 1 ? '¡Mañana' : (v.diffDias === 0 ? '¡Hoy' : `En ${v.diffDias} días`);
+            const quienes = v.quienes && v.quienes.length > 0 ? v.quienes.join(', ') : 'La familia';
+            resp += `🏖️ <b>¡Vacaciones Próximas!</b> ${cuando} comienzan las vacaciones en <b>${v.lugar}</b> (${quienes}).\n`;
+            if (v.nota) resp += `• 📝 <i>"${v.nota}"</i>\n`;
+            resp += '\n';
+          });
+        }
+
+        if (vacsActivas.length > 0) {
+          vacsActivas.forEach(v => {
+            const quienes = v.quienes && v.quienes.length > 0 ? v.quienes.join(', ') : 'La familia';
+            resp += `🌴 <b>¡Actualmente de Vacaciones!</b> En <b>${v.lugar}</b> (${quienes}).\n\n`;
+          });
+        }
+
+        if (cumplesHoy.length === 0 && santosHoy.length === 0 && itemsHoy.length === 0 && vacsActivas.length === 0 && vacsProximas.length === 0) {
+          resp += `🏖️ ¡Día tranquilo! No hay traslados, citas médicas, quedadas ni celebraciones programadas para hoy.\n\n`;
         }
 
         resp += `👉 <a href="https://familiabarnuevoapp.web.app">Abrir FamilyApp</a>`;
