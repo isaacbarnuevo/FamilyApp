@@ -59,8 +59,10 @@ import {
   HeartPulse,
   Car,
   ArrowRight,
-  Navigation
+  Navigation,
+  Camera
 } from 'lucide-react';
+import { extraerDatosCitaDesdeFoto } from './ocrCitas';
 
 // --- CONFIGURACIÓN DE FIREBASE EN LA NUBE CON SALVAGUARDA DE MODO LOCAL ---
 const firebaseConfig = (typeof __firebase_config !== 'undefined' && __firebase_config) 
@@ -354,6 +356,30 @@ const calcularDiasRestantes = (mes, dia) => {
   return Math.round((fechaCelMidnight.getTime() - hoyMidnight.getTime()) / (1000 * 60 * 60 * 24));
 };
 
+// --- HELPER DETECTAR CIUDAD DE CITA (MADRID / ALCALÁ) ---
+const detectarCiudadCita = (cita) => {
+  if (!cita) return 'madrid';
+  if (cita.ciudad && (cita.ciudad === 'madrid' || cita.ciudad === 'alcala')) {
+    return cita.ciudad;
+  }
+  const txt = `${cita.centro || ''} ${cita.notas || ''} ${cita.ubicacionUrl || ''}`.toLowerCase();
+  if (
+    txt.includes('alcalá') ||
+    txt.includes('alcala') ||
+    txt.includes('príncipe de asturias') ||
+    txt.includes('principe de asturias') ||
+    txt.includes('juan de austria') ||
+    txt.includes('la alcarria') ||
+    txt.includes('alcarria') ||
+    txt.includes('manuel merino') ||
+    txt.includes('esga') ||
+    txt.includes('esgaravita')
+  ) {
+    return 'alcala';
+  }
+  return 'madrid';
+};
+
 // --- INTEGRACIÓN GOOGLE CALENDAR & .ICS ---
 const getGoogleCalendarUrlForEvent = (evt) => {
   if (!evt || !evt.fecha) return '#';
@@ -363,19 +389,31 @@ const getGoogleCalendarUrlForEvent = (evt) => {
   );
   const location = encodeURIComponent(evt.lugar || '');
   
-  const cleanDate = evt.fecha.replace(/-/g, '');
+  const cleanStartDate = evt.fecha.replace(/-/g, '');
   let datesParam = '';
-  if (evt.hora && evt.hora.includes(':')) {
+  if (evt.fechaFin && evt.fechaFin !== evt.fecha) {
+    const nextDay = new Date(evt.fechaFin);
+    nextDay.setDate(nextDay.getDate() + 1);
+    const cleanEndDate = nextDay.toISOString().slice(0, 10).replace(/-/g, '');
+    if (evt.hora && evt.hora.includes(':')) {
+      const [hh, mm] = evt.hora.split(':');
+      const startHour = hh.padStart(2, '0');
+      const startMin = mm.padStart(2, '0');
+      datesParam = `${cleanStartDate}T${startHour}${startMin}00/${cleanEndDate}T235900`;
+    } else {
+      datesParam = `${cleanStartDate}/${cleanEndDate}`;
+    }
+  } else if (evt.hora && evt.hora.includes(':')) {
     const [hh, mm] = evt.hora.split(':');
     const startHour = hh.padStart(2, '0');
     const startMin = mm.padStart(2, '0');
     const endHour = String((parseInt(startHour, 10) + 3) % 24).padStart(2, '0');
-    datesParam = `${cleanDate}T${startHour}${startMin}00/${cleanDate}T${endHour}${startMin}00`;
+    datesParam = `${cleanStartDate}T${startHour}${startMin}00/${cleanStartDate}T${endHour}${startMin}00`;
   } else {
     const nextDay = new Date(evt.fecha);
     nextDay.setDate(nextDay.getDate() + 1);
     const nextDayStr = nextDay.toISOString().slice(0, 10).replace(/-/g, '');
-    datesParam = `${cleanDate}/${nextDayStr}`;
+    datesParam = `${cleanStartDate}/${nextDayStr}`;
   }
   
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${datesParam}&details=${details}&location=${location}`;
@@ -783,6 +821,7 @@ export default function App() {
   const [newEvent, setNewEvent] = useState({
     titulo: '',
     fecha: '',
+    fechaFin: '',
     hora: '',
     lugar: '',
     ubicacionUrl: '',
@@ -805,17 +844,20 @@ export default function App() {
   const [newIdeaText, setNewIdeaText] = useState('');
   const [newIdeaAuthor, setNewIdeaAuthor] = useState('');
 
-  // --- ESTADOS DE CITAS MÉDICAS ---
+  // --- ESTADOS DE CITAS MÉDICAS Y OCR ---
   const [showCitaModal, setShowCitaModal] = useState(false);
   const [isEditingCita, setIsEditingCita] = useState(false);
   const [editingCitaId, setEditingCitaId] = useState(null);
   const [filtroPacienteCita, setFiltroPacienteCita] = useState('todas');
   const [notifyTelegramOnCita, setNotifyTelegramOnCita] = useState(true);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrProgressText, setOcrProgressText] = useState('');
   const [newCita, setNewCita] = useState({
     paciente: 'Mamá (Encarnación)',
-    especialidad: 'Médico de Cabecera',
+    especialidad: '',
     medico: '',
-    centro: 'Centro de Salud',
+    centro: '',
+    ciudad: 'madrid',
     ubicacionUrl: '',
     fecha: '',
     hora: '10:00',
@@ -1564,6 +1606,66 @@ export default function App() {
       unsubUbicacion();
     };
   }, [user]);
+
+  // --- LIMPIEZA AUTOMÁTICA DE CITAS Y TRASLADOS PASADOS ---
+  const limpiezaRealizadaRef = useRef(false);
+
+  const ejecutarLimpiezaPasados = async (citasActuales = citasMedicas, trasladosActuales = trasladosPadres, manual = false) => {
+    const hoyIso = getFechaHoyLocal(new Date());
+    const citasPasadas = (citasActuales || []).filter(c => c.fecha && c.fecha < hoyIso);
+    const trasladosPasados = (trasladosActuales || []).filter(t => t.fecha && t.fecha < hoyIso);
+
+    if (citasPasadas.length === 0 && trasladosPasados.length === 0) {
+      if (manual) triggerToast('✨ Todo al día: no hay citas ni traslados pasados pendientes.');
+      return;
+    }
+
+    let borrados = 0;
+    for (const c of citasPasadas) {
+      const isLocal = typeof c.id === 'string' && c.id.startsWith('cit_');
+      if (isCloudMode && user && !isLocalMode && !isLocal) {
+        try {
+          await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'citasMedicas', c.id));
+          borrados++;
+        } catch (e) {
+          console.warn('Error borrando cita pasada en Firestore:', e);
+        }
+      }
+    }
+
+    for (const t of trasladosPasados) {
+      const isLocal = typeof t.id === 'string' && t.id.startsWith('tras_');
+      if (isCloudMode && user && !isLocalMode && !isLocal) {
+        try {
+          await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'trasladosPadres', t.id));
+          borrados++;
+        } catch (e) {
+          console.warn('Error borrando traslado pasado en Firestore:', e);
+        }
+      }
+    }
+
+    const citasActualizadas = (citasActuales || []).filter(c => !c.fecha || c.fecha >= hoyIso);
+    setCitasMedicas(citasActualizadas);
+    persistLocal('citasMedicas', citasActualizadas);
+
+    const trasladosActualizados = (trasladosActuales || []).filter(t => !t.fecha || t.fecha >= hoyIso);
+    setTrasladosPadres(trasladosActualizados);
+    persistLocal('trasladosPadres', trasladosActualizados);
+
+    triggerToast(`🧹 Limpieza automática: eliminadas ${citasPasadas.length} cita(s) y ${trasladosPasados.length} traslado(s) pasados.`);
+  };
+
+  useEffect(() => {
+    if (loading || limpiezaRealizadaRef.current) return;
+    if (citasMedicas.length === 0 && trasladosPadres.length === 0) return;
+    const hoyIso = getFechaHoyLocal(new Date());
+    const hayPasados = (citasMedicas || []).some(c => c.fecha && c.fecha < hoyIso) || (trasladosPadres || []).some(t => t.fecha && t.fecha < hoyIso);
+    if (hayPasados) {
+      limpiezaRealizadaRef.current = true;
+      ejecutarLimpiezaPasados(citasMedicas, trasladosPadres, false);
+    }
+  }, [citasMedicas, trasladosPadres, loading]);
 
   // --- AVISO DIARIO AUTOMÁTICO AL GRUPO DE TELEGRAM (LAOS) ---
   const avisoDiarioTelegramRef = useRef(false);
@@ -2783,6 +2885,7 @@ export default function App() {
     const eventData = {
       titulo: newEvent.titulo,
       fecha: newEvent.fecha,
+      fechaFin: newEvent.fechaFin || '',
       hora: newEvent.hora || 'Por concretar',
       lugar: newEvent.lugar,
       ubicacionUrl: mapUrl,
@@ -2791,6 +2894,10 @@ export default function App() {
     };
 
     const isLocalEventId = typeof editingEventId === 'string' && editingEventId.startsWith('e_');
+
+    const textoFechaEvento = (eventData.fechaFin && eventData.fechaFin !== eventData.fecha)
+      ? `Del ${formatearFechaStr(eventData.fecha)} al ${formatearFechaStr(eventData.fechaFin)}`
+      : `${formatearFechaStr(eventData.fecha)} a las ${eventData.hora}`;
 
     if (isCloudMode && user && !isLocalMode) {
       try {
@@ -2806,11 +2913,11 @@ export default function App() {
         if (notifyTelegramOnEvent) {
           const accionTxt = isEditingEvent ? 'actualizado' : 'propuesto';
           const autorTxt = usuarioActivo.split(' ')[0];
-          const msgTg = `🍖 <b>¡Plan familiar ${accionTxt} por ${autorTxt}!</b>\n\n📌 <b>${eventData.titulo}</b>\n📅 Fecha: ${formatearFechaStr(eventData.fecha)} a las ${eventData.hora}\n📍 Lugar: ${eventData.lugar}\n${eventData.descripcion ? `📝 <i>"${eventData.descripcion}"</i>\n` : ''}\n👉 <a href="https://familiabarnuevoapp.web.app">Entrar a la app para confirmar</a>`;
+          const msgTg = `🍖 <b>¡Plan familiar ${accionTxt} por ${autorTxt}!</b>\n\n📌 <b>${eventData.titulo}</b>\n📅 Fecha: ${textoFechaEvento}\n📍 Lugar: ${eventData.lugar}\n${eventData.descripcion ? `📝 <i>"${eventData.descripcion}"</i>\n` : ''}\n👉 <a href="https://familiabarnuevoapp.web.app">Entrar a la app para confirmar</a>`;
           enviarMensajeTelegram(msgTg);
         }
 
-        setNewEvent({ titulo: '', fecha: '', hora: '', lugar: '', ubicacionUrl: '', descripcion: '', asistentes: [] });
+        setNewEvent({ titulo: '', fecha: '', fechaFin: '', hora: '', lugar: '', ubicacionUrl: '', descripcion: '', asistentes: [] });
         setShowEventModal(false);
         setIsEditingEvent(false);
         setEditingEventId(null);
@@ -2834,11 +2941,11 @@ export default function App() {
       if (notifyTelegramOnEvent) {
         const accionTxt = isEditingEvent ? 'actualizado' : 'propuesto';
         const autorTxt = usuarioActivo.split(' ')[0];
-        const msgTg = `🍖 <b>¡Plan familiar ${accionTxt} por ${autorTxt}!</b>\n\n📌 <b>${eventData.titulo}</b>\n📅 Fecha: ${formatearFechaStr(eventData.fecha)} a las ${eventData.hora}\n📍 Lugar: ${eventData.lugar}\n${eventData.descripcion ? `📝 <i>"${eventData.descripcion}"</i>\n` : ''}\n👉 <a href="https://familiabarnuevoapp.web.app">Entrar a la app para confirmar</a>`;
+        const msgTg = `🍖 <b>¡Plan familiar ${accionTxt} por ${autorTxt}!</b>\n\n📌 <b>${eventData.titulo}</b>\n📅 Fecha: ${textoFechaEvento}\n📍 Lugar: ${eventData.lugar}\n${eventData.descripcion ? `📝 <i>"${eventData.descripcion}"</i>\n` : ''}\n👉 <a href="https://familiabarnuevoapp.web.app">Entrar a la app para confirmar</a>`;
         enviarMensajeTelegram(msgTg);
       }
 
-      setNewEvent({ titulo: '', fecha: '', hora: '', lugar: '', ubicacionUrl: '', descripcion: '', asistentes: [] });
+      setNewEvent({ titulo: '', fecha: '', fechaFin: '', hora: '', lugar: '', ubicacionUrl: '', descripcion: '', asistentes: [] });
       setShowEventModal(false);
       setIsEditingEvent(false);
       setEditingEventId(null);
@@ -2907,16 +3014,89 @@ export default function App() {
     }
   };
 
-  // --- ACCIONES DE CITAS MÉDICAS ---
+  // --- ACCIONES DE CITAS MÉDICAS, ESPECIALIDADES Y CENTROS DINÁMICOS ---
+  const especialidadesFrecuentes = useMemo(() => {
+    const base = [
+      'Podólogo',
+      'Oftalmología',
+      'Odontólogo / Dentista',
+      'Médico de Cabecera',
+      'Análisis de Sangre',
+      'Cardiología',
+      'Traumatología',
+      'Dermatología',
+      'Revisión Oído',
+      'Fisioterapia',
+      'Aparato Digestivo',
+      'Neurología'
+    ];
+    const historico = (citasMedicas || []).map(c => c.especialidad).filter(Boolean);
+    return Array.from(new Set([...base, ...historico]));
+  }, [citasMedicas]);
+
+  const centrosFrecuentes = useMemo(() => {
+    const base = [
+      'Fundación Jiménez Díaz (Madrid)',
+      'Hospital Clínico San Carlos (Madrid)',
+      'Hospital Univ. Príncipe de Asturias (Alcalá)',
+      'C.S. Juan de Austria (Alcalá)',
+      'C.S. La Alcarria (Alcalá)',
+      'C.S. Manuel Merino (Alcalá)',
+      'Hospital Universitario La Paz (Madrid)',
+      'Hospital Ramón y Cajal (Madrid)'
+    ];
+    const historico = (citasMedicas || []).map(c => c.centro).filter(Boolean);
+    return Array.from(new Set([...base, ...historico]));
+  }, [citasMedicas]);
+
+  const handleFotoCitaSeleccionada = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setOcrLoading(true);
+      setOcrProgressText('Iniciando lector óptico (OCR)...');
+      const datos = await extraerDatosCitaDesdeFoto(file, (msg) => {
+        setOcrProgressText(msg);
+      });
+
+      const ciudadDetectada = datos.ciudad || detectarCiudadCita({ centro: datos.centro });
+
+      setNewCita(prev => ({
+        ...prev,
+        paciente: datos.paciente || prev.paciente,
+        especialidad: datos.especialidad || prev.especialidad,
+        fecha: datos.fecha || prev.fecha,
+        hora: datos.hora || prev.hora || '10:00',
+        centro: datos.centro || prev.centro,
+        ciudad: ciudadDetectada,
+        medico: datos.medico || prev.medico,
+        notas: datos.rawText ? `[Extraído por foto]: ${datos.rawText.slice(0, 140).replace(/\s+/g, ' ').trim()}` : prev.notas
+      }));
+
+      setIsEditingCita(false);
+      setEditingCitaId(null);
+      setShowCitaModal(true);
+      triggerToast('✨ ¡Foto leída con éxito! Revisa la cita médica y pulsa Guardar.');
+    } catch (err) {
+      console.error('Error procesando foto de cita:', err);
+      triggerToast('No se pudo leer la foto. Puedes rellenar los datos manualmente.');
+    } finally {
+      setOcrLoading(false);
+      setOcrProgressText('');
+      e.target.value = '';
+    }
+  };
+
   const resetCitaForm = () => {
     setNewCita({
       paciente: 'Mamá (Encarnación)',
-      especialidad: 'Médico de Cabecera',
+      especialidad: '',
       medico: '',
-      centro: 'Centro de Salud',
+      centro: '',
+      ciudad: 'madrid',
       ubicacionUrl: '',
       fecha: '',
-      hora: '10:00',
+      hora: '',
       acompanante: 'Pendiente de asignar',
       quienLleva: 'Pendiente de asignar',
       quienRecoge: 'Pendiente de asignar',
@@ -2949,11 +3129,14 @@ export default function App() {
       acompananteFinal = `Lleva: ${lTxt} • Recoge: ${rTxt}`;
     }
 
+    const ciudadFinal = newCita.ciudad || detectarCiudadCita(newCita);
+
     const citaData = {
       paciente: newCita.paciente,
       especialidad: newCita.especialidad,
       medico: newCita.medico || '',
       centro: newCita.centro,
+      ciudad: ciudadFinal,
       ubicacionUrl: newCita.ubicacionUrl || '',
       fecha: newCita.fecha,
       hora: newCita.hora || '10:00',
@@ -3062,6 +3245,7 @@ export default function App() {
       especialidad: cita.especialidad || '',
       medico: cita.medico || '',
       centro: cita.centro || '',
+      ciudad: cita.ciudad || detectarCiudadCita(cita),
       ubicacionUrl: cita.ubicacionUrl || '',
       fecha: cita.fecha || '',
       hora: cita.hora || '10:00',
@@ -3585,6 +3769,7 @@ export default function App() {
     setNewEvent({
       titulo: evt.titulo || '',
       fecha: evt.fecha || '',
+      fechaFin: evt.fechaFin || '',
       hora: evt.hora === 'Por concretar' ? '' : (evt.hora || ''),
       lugar: evt.lugar || '',
       ubicacionUrl: evt.ubicacionUrl || '',
@@ -4786,7 +4971,7 @@ export default function App() {
               {/* Listado de Citas */}
               <div className="space-y-3">
                 {[...citasMedicas]
-                  .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
+                  .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '') || (a.hora || '').localeCompare(b.hora || ''))
                   .map((c, idx) => {
                     const isCompletada = c.estado === 'completada';
                     const sinAcompanante = !c.acompanante || c.acompanante === 'Pendiente de asignar';
@@ -4885,7 +5070,7 @@ export default function App() {
               {/* Listado de Traslados */}
               <div className="space-y-3">
                 {[...trasladosPadres]
-                  .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
+                  .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '') || (a.hora || '').localeCompare(b.hora || ''))
                   .map((t, idx) => {
                     const isRealizado = t.estado === 'realizado';
                     const sinConductor = !t.conductor || t.conductor === 'Pendiente de asignar';
@@ -5271,7 +5456,7 @@ export default function App() {
                             (() => {
                               const proxima = [...citasMedicas]
                                 .filter(c => c.estado !== 'completada' && c.fecha)
-                                .sort((a, b) => a.fecha.localeCompare(b.fecha))[0];
+                                .sort((a, b) => a.fecha.localeCompare(b.fecha) || (a.hora || '').localeCompare(b.hora || ''))[0];
                               if (!proxima) return <p className="text-slate-400 text-xs py-4 text-center">No hay citas pendientes.</p>;
                               return (
                                 <div className="space-y-1.5">
@@ -5368,7 +5553,7 @@ export default function App() {
                         {(() => {
                           const pendientes = (trasladosPadres || [])
                             .filter(t => t.estado !== 'realizado' && t.fecha)
-                            .sort((a, b) => a.fecha.localeCompare(b.fecha));
+                            .sort((a, b) => a.fecha.localeCompare(b.fecha) || (a.hora || '').localeCompare(b.hora || ''));
                           const proximo = pendientes[0];
 
                           if (!proximo) {
@@ -6099,7 +6284,20 @@ export default function App() {
                               </div>
 
                               <h3 className="text-xl font-bold text-slate-800 pr-12">{evt.titulo}</h3>
-                              <p className="text-xs text-slate-500">📅 Fecha: {formatearFechaStr(evt.fecha)} - {evt.hora} | 📍 Lugar: {evt.lugar}</p>
+                              <p className="text-xs text-slate-500 flex items-center gap-2 flex-wrap">
+                                <span>
+                                  📅 {evt.fechaFin && evt.fechaFin !== evt.fecha 
+                                    ? `Del ${formatearFechaStr(evt.fecha)} al ${formatearFechaStr(evt.fechaFin)}`
+                                    : `${formatearFechaStr(evt.fecha)} - ${evt.hora || 'Por concretar'}`
+                                  }
+                                </span>
+                                {evt.fechaFin && evt.fechaFin !== evt.fecha && (
+                                  <span className="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-200">
+                                    🎉 Varios días / Fin de semana
+                                  </span>
+                                )}
+                                <span>| 📍 Lugar: {evt.lugar}</span>
+                              </p>
                               {evt.descripcion && <p className="text-xs text-slate-650 bg-slate-50 p-2 rounded-lg">{evt.descripcion}</p>}
                               <div className="pt-1">
                                 <a
@@ -6308,12 +6506,23 @@ export default function App() {
                       </div>
 
                       <div className="flex items-center gap-2 flex-wrap">
+                        <label className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl flex items-center gap-1.5 transition-all shadow-md cursor-pointer shrink-0">
+                          <Camera className="w-4 h-4" /> <span>📷 Añadir por Foto</span>
+                          <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFotoCitaSeleccionada} />
+                        </label>
+                        <button
+                          onClick={() => ejecutarLimpiezaPasados(citasMedicas, trasladosPadres, true)}
+                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-2.5 px-3 rounded-xl flex items-center gap-1.5 transition-all border border-slate-200"
+                          title="Limpiar automáticamente citas y traslados de días anteriores"
+                        >
+                          <span>🧹</span> Limpiar Pasadas
+                        </button>
                         <button
                           onClick={() => handleDownloadPDF('citas')}
                           className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl flex items-center gap-1.5 transition-all shadow-md"
                           title="Descargar agenda de citas médicas en PDF"
                         >
-                          <Download className="w-4 h-4" /> <span>Descargar PDF</span>
+                          <Download className="w-4 h-4" /> <span>PDF</span>
                         </button>
                         <button
                           onClick={handleEnviarResumenCitasTelegram}
@@ -6326,7 +6535,7 @@ export default function App() {
                           onClick={() => { resetCitaForm(); setShowCitaModal(true); }}
                           className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center gap-1.5 transition-all shadow-md shrink-0"
                         >
-                          <Plus className="w-4 h-4" /> Nueva Cita Médica
+                          <Plus className="w-4 h-4" /> Nueva Cita
                         </button>
                       </div>
                     </div>
@@ -6336,6 +6545,8 @@ export default function App() {
                       <div className="flex flex-wrap gap-1.5">
                         {[
                           { id: 'todas', label: 'Todas' },
+                          { id: 'madrid', label: '🔵 Madrid' },
+                          { id: 'alcala', label: '🟢 Alcalá' },
                           { id: 'mama', label: '👵 Mamá (Encarnación)' },
                           { id: 'papa', label: '👴 Papá (Jaime)' },
                           { id: 'sin_acompanante', label: '⚠️ Sin Acompañante' },
@@ -6364,6 +6575,12 @@ export default function App() {
                     {/* Listado de Citas */}
                     {(() => {
                       const citasFiltradas = citasMedicas.filter(c => {
+                        if (filtroPacienteCita === 'madrid') {
+                          return detectarCiudadCita(c) === 'madrid';
+                        }
+                        if (filtroPacienteCita === 'alcala') {
+                          return detectarCiudadCita(c) === 'alcala';
+                        }
                         if (filtroPacienteCita === 'mama') {
                           return (c.paciente || '').toLowerCase().includes('mamá') || (c.paciente || '').toLowerCase().includes('encarnación');
                         }
@@ -6384,7 +6601,9 @@ export default function App() {
                         if (a.estado !== b.estado) {
                           return a.estado === 'completada' ? 1 : -1;
                         }
-                        return (a.fecha || '').localeCompare(b.fecha || '');
+                        const cmpFecha = (a.fecha || '').localeCompare(b.fecha || '');
+                        if (cmpFecha !== 0) return cmpFecha;
+                        return (a.hora || '').localeCompare(b.hora || '');
                       });
 
                       if (citasFiltradas.length === 0) {
@@ -6415,26 +6634,37 @@ export default function App() {
                             const esMama = (cita.paciente || '').toLowerCase().includes('mamá') || (cita.paciente || '').toLowerCase().includes('encarnación');
                             const esCompletada = cita.estado === 'completada';
                             const sinAcompanante = !cita.acompanante || cita.acompanante === 'Pendiente de asignar';
+                            const ciudadCita = detectarCiudadCita(cita);
+                            const esMadrid = ciudadCita === 'madrid';
 
                             return (
                               <div
                                 key={cita.id}
-                                className={`rounded-3xl border p-5 transition-all shadow-xs flex flex-col justify-between space-y-4 ${
+                                className={`rounded-3xl border-2 p-5 transition-all shadow-xs flex flex-col justify-between space-y-4 ${
                                   esCompletada
                                     ? 'bg-slate-50/80 border-slate-200 opacity-75'
-                                    : 'bg-white border-slate-200/90 hover:border-rose-300 hover:shadow-md'
+                                    : esMadrid
+                                      ? 'bg-white border-blue-200 hover:border-blue-400 hover:shadow-md'
+                                      : 'bg-white border-emerald-200 hover:border-emerald-400 hover:shadow-md'
                                 }`}
                               >
                                 <div>
-                                  {/* Cabecera de la tarjeta */}
+                                  {/* Cabecera de la tarjeta con badge Madrid/Alcalá */}
                                   <div className="flex justify-between items-start gap-2">
                                     <div className="flex items-center gap-2">
                                       <span className={`text-xl p-2 rounded-2xl ${esMama ? 'bg-fuchsia-100 text-fuchsia-700' : 'bg-blue-100 text-blue-700'}`}>
                                         {esMama ? '👵' : '👴'}
                                       </span>
                                       <div>
-                                        <div className="flex items-center gap-1.5">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
                                           <h3 className="font-bold text-slate-900 text-sm">{cita.paciente}</h3>
+                                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                            esMadrid
+                                              ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                          }`}>
+                                            {esMadrid ? '🔵 Madrid' : '🟢 Alcalá'}
+                                          </span>
                                           {esCompletada && (
                                             <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-0.5 rounded-full">
                                               Completada
@@ -6693,11 +6923,18 @@ export default function App() {
 
                       <div className="flex gap-2 flex-wrap w-full md:w-auto">
                         <button
+                          onClick={() => ejecutarLimpiezaPasados(citasMedicas, trasladosPadres, true)}
+                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2.5 rounded-xl transition border border-slate-200 flex items-center gap-1.5"
+                          title="Limpiar automáticamente traslados y citas de fechas pasadas"
+                        >
+                          <span>🧹</span> Limpiar Pasados
+                        </button>
+                        <button
                           onClick={() => handleDownloadPDF('traslados')}
                           className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition shadow-md flex items-center gap-1.5"
                           title="Descargar planificación de traslados en PDF"
                         >
-                          <Download className="w-4 h-4" /> <span>Descargar PDF</span>
+                          <Download className="w-4 h-4" /> <span>PDF</span>
                         </button>
                         <button
                           onClick={handleEnviarResumenTrasladosTelegram}
@@ -6810,7 +7047,9 @@ export default function App() {
                         if (a.estado !== b.estado) {
                           return a.estado === 'realizado' ? 1 : -1;
                         }
-                        return (a.fecha || '').localeCompare(b.fecha || '');
+                        const cmpFecha = (a.fecha || '').localeCompare(b.fecha || '');
+                        if (cmpFecha !== 0) return cmpFecha;
+                        return (a.hora || '').localeCompare(b.hora || '');
                       });
 
                       if (trasladosFiltrados.length === 0) {
@@ -7945,13 +8184,69 @@ export default function App() {
                   <input type="text" required placeholder="Título del plan (ej: Barbacoa familiar...)" className="w-full p-2.5 border rounded-xl" value={newEvent.titulo} onChange={(e) => setNewEvent({ ...newEvent, titulo: e.target.value })} />
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 mb-1">Fecha</label>
-                      <input type="date" required className="w-full p-2.5 border rounded-xl" value={newEvent.fecha} onChange={(e) => setNewEvent({ ...newEvent, fecha: e.target.value })} />
+                      <label className="block text-[10px] font-bold text-slate-500 mb-1">Fecha Inicio *</label>
+                      <input
+                        type="date"
+                        required
+                        className="w-full p-2.5 border rounded-xl"
+                        value={newEvent.fecha}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewEvent({
+                            ...newEvent,
+                            fecha: val,
+                            fechaFin: newEvent.fechaFin && newEvent.fechaFin < val ? val : newEvent.fechaFin
+                          });
+                        }}
+                      />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 mb-1">Hora</label>
-                      <input type="time" className="w-full p-2.5 border rounded-xl" value={newEvent.hora} onChange={(e) => setNewEvent({ ...newEvent, hora: e.target.value })} />
+                      <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                        Fecha Fin (opcional / varios días)
+                      </label>
+                      <input
+                        type="date"
+                        min={newEvent.fecha}
+                        className="w-full p-2.5 border rounded-xl"
+                        value={newEvent.fechaFin || ''}
+                        onChange={(e) => setNewEvent({ ...newEvent, fechaFin: e.target.value })}
+                      />
                     </div>
+                  </div>
+
+                  {/* Atajo para fin de semana completo */}
+                  {newEvent.fecha && (
+                    <div className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-200">
+                      <span className="text-[10px] text-slate-500">¿Dura todo el fin de semana?</span>
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const f = new Date(newEvent.fecha);
+                            f.setDate(f.getDate() + 1);
+                            const nextDay = f.toISOString().slice(0, 10);
+                            setNewEvent({ ...newEvent, fechaFin: nextDay });
+                          }}
+                          className="text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-2 py-1 rounded-lg border border-indigo-200 transition"
+                        >
+                          + 1 día (Fin de semana)
+                        </button>
+                        {newEvent.fechaFin && newEvent.fechaFin !== newEvent.fecha && (
+                          <button
+                            type="button"
+                            onClick={() => setNewEvent({ ...newEvent, fechaFin: '' })}
+                            className="text-[10px] text-rose-500 hover:underline px-1"
+                          >
+                            Quitar fin
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Hora (ej: 14:00, o dejar vacío para todo el día)</label>
+                    <input type="time" className="w-full p-2.5 border rounded-xl" value={newEvent.hora} onChange={(e) => setNewEvent({ ...newEvent, hora: e.target.value })} />
                   </div>
                   <input type="text" required placeholder="Lugar (ej: Ribera, casa de mamá...)" className="w-full p-2.5 border rounded-xl" value={newEvent.lugar} onChange={(e) => setNewEvent({ ...newEvent, lugar: e.target.value })} />
                   <input type="url" placeholder="URL ubicación (Google Maps, opcional)..." className="w-full p-2.5 border rounded-xl" value={newEvent.ubicacionUrl} onChange={(e) => setNewEvent({ ...newEvent, ubicacionUrl: e.target.value })} />
@@ -8106,6 +8401,22 @@ export default function App() {
                 </div>
 
                 <form onSubmit={handleSaveCita} className="space-y-3.5 text-xs">
+                  {/* Botón Escanear volante / calendario por foto */}
+                  <div className="bg-gradient-to-r from-violet-50 to-indigo-50 border border-indigo-150 p-3 rounded-2xl flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">📷</span>
+                      <div>
+                        <div className="text-xs font-bold text-indigo-950">¿Tienes foto del volante o calendario?</div>
+                        <div className="text-[10px] text-indigo-700">Rellena la cita automáticamente por foto</div>
+                      </div>
+                    </div>
+                    <label className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3 py-1.5 rounded-xl cursor-pointer shadow-xs transition shrink-0 inline-flex items-center gap-1.5">
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>Escanear Foto</span>
+                      <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFotoCitaSeleccionada} />
+                    </label>
+                  </div>
+
                   {/* Paciente con selector destacado y claro */}
                   <div className="bg-slate-50/90 p-3.5 rounded-2xl border border-slate-200">
                     <label className="block text-[11px] font-black text-slate-800 uppercase tracking-wider mb-2 flex items-center justify-between">
@@ -8150,7 +8461,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Especialidad con sugerencias rápidas */}
+                  {/* Especialidad con sugerencias rápidas dinámicas */}
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                       Especialidad Médica *
@@ -8158,34 +8469,64 @@ export default function App() {
                     <input
                       type="text"
                       required
-                      placeholder="Ej: Cabecera, Cardiología, Traumatología..."
+                      placeholder="Ej: Podólogo, Oftalmólogo, Médico de Cabecera..."
                       className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 focus:bg-white text-slate-800 font-medium outline-none focus:ring-2 focus:ring-rose-400"
                       value={newCita.especialidad}
                       onChange={(e) => setNewCita({ ...newCita, especialidad: e.target.value })}
                     />
                     <div className="flex flex-wrap gap-1 mt-1.5">
-                      {[
-                        'Médico de Cabecera',
-                        'Análisis de Sangre',
-                        'Cardiología',
-                        'Traumatología',
-                        'Oftalmología',
-                        'Revisión Oído',
-                        'Dermatología'
-                      ].map(sug => (
+                      {especialidadesFrecuentes.map(sug => (
                         <button
                           key={sug}
                           type="button"
                           onClick={() => setNewCita({ ...newCita, especialidad: sug })}
                           className={`text-[9px] px-2 py-0.5 rounded-lg border transition ${
                             newCita.especialidad === sug
-                              ? 'bg-rose-100 text-rose-800 border-rose-300 font-bold'
-                              : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-150'
+                              ? 'bg-rose-100 text-rose-800 border-rose-300 font-bold shadow-3xs'
+                              : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
                           }`}
                         >
                           {sug}
                         </button>
                       ))}
+                    </div>
+                  </div>
+
+                  {/* Ciudad de la cita: Madrid o Alcalá */}
+                  <div className="bg-slate-50/90 p-3 rounded-2xl border border-slate-200">
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                      <span>📍 Ciudad de la Cita Médica</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        (newCita.ciudad || detectarCiudadCita(newCita)) === 'madrid'
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-emerald-100 text-emerald-800'
+                      }`}>
+                        {(newCita.ciudad || detectarCiudadCita(newCita)) === 'madrid' ? '🔵 Madrid' : '🟢 Alcalá'}
+                      </span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNewCita({ ...newCita, ciudad: 'madrid' })}
+                        className={`p-2 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                          (newCita.ciudad || detectarCiudadCita(newCita)) === 'madrid'
+                            ? 'bg-blue-100/90 border-blue-500 text-blue-950 ring-2 ring-blue-300 font-black'
+                            : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-100'
+                        }`}
+                      >
+                        <span>🔵</span> Madrid
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewCita({ ...newCita, ciudad: 'alcala' })}
+                        className={`p-2 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                          (newCita.ciudad || detectarCiudadCita(newCita)) === 'alcala'
+                            ? 'bg-emerald-100/90 border-emerald-500 text-emerald-950 ring-2 ring-emerald-300 font-black'
+                            : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-100'
+                        }`}
+                      >
+                        <span>🟢</span> Alcalá
+                      </button>
                     </div>
                   </div>
 
@@ -8231,7 +8572,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Centro de Salud / Hospital con sugerencias */}
+                  {/* Centro de Salud / Hospital con sugerencias de Madrid y Alcalá */}
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                       Centro Médico u Hospital *
@@ -8239,31 +8580,36 @@ export default function App() {
                     <input
                       type="text"
                       required
-                      placeholder="Ej: Centro de Salud, Hospital Morales Meseguer..."
+                      placeholder="Ej: Fundación Jiménez Díaz, Hospital Clínico, Hospital Príncipe de Asturias..."
                       className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 focus:bg-white text-slate-800 font-medium outline-none focus:ring-2 focus:ring-rose-400"
                       value={newCita.centro}
-                      onChange={(e) => setNewCita({ ...newCita, centro: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const cAuto = detectarCiudadCita({ centro: val });
+                        setNewCita({ ...newCita, centro: val, ciudad: cAuto });
+                      }}
                     />
                     <div className="flex flex-wrap gap-1 mt-1.5">
-                      {[
-                        'Centro de Salud',
-                        'Hospital Morales Meseguer',
-                        'Hospital Reina Sofía',
-                        'Hospital Virgen de la Arrixaca'
-                      ].map(centroSug => (
-                        <button
-                          key={centroSug}
-                          type="button"
-                          onClick={() => setNewCita({ ...newCita, centro: centroSug })}
-                          className={`text-[9px] px-2 py-0.5 rounded-lg border transition ${
-                            newCita.centro === centroSug
-                              ? 'bg-indigo-100 text-indigo-800 border-indigo-300 font-bold'
-                              : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-150'
-                          }`}
-                        >
-                          {centroSug}
-                        </button>
-                      ))}
+                      {centrosFrecuentes.map(centroSug => {
+                        const esAlcala = centroSug.toLowerCase().includes('alcalá') || centroSug.toLowerCase().includes('austria') || centroSug.toLowerCase().includes('alcarria');
+                        return (
+                          <button
+                            key={centroSug}
+                            type="button"
+                            onClick={() => {
+                              const ciudadAuto = detectarCiudadCita({ centro: centroSug });
+                              setNewCita({ ...newCita, centro: centroSug, ciudad: ciudadAuto });
+                            }}
+                            className={`text-[9px] px-2 py-0.5 rounded-lg border transition ${
+                              newCita.centro === centroSug
+                                ? 'bg-indigo-100 text-indigo-800 border-indigo-300 font-bold shadow-3xs'
+                                : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                            }`}
+                          >
+                            <span>{esAlcala ? '🟢' : '🔵'}</span> {centroSug}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -8724,6 +9070,22 @@ export default function App() {
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+          )}
+
+          {/* Modal / Overlay de Procesamiento OCR */}
+          {ocrLoading && (
+            <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+              <div className="bg-white rounded-3xl p-6 max-w-sm w-full text-center space-y-3 shadow-2xl border border-slate-100">
+                <div className="w-14 h-14 mx-auto bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center text-3xl animate-bounce">
+                  📷
+                </div>
+                <h3 className="font-black text-slate-800 text-base">Escaneando Volante / Calendario</h3>
+                <p className="text-xs text-slate-500">{ocrProgressText || 'Leyendo texto con inteligencia visual...'}</p>
+                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                  <div className="bg-indigo-600 h-2 w-full animate-pulse"></div>
+                </div>
               </div>
             </div>
           )}

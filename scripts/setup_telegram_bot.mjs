@@ -5,8 +5,10 @@ const COMANDOS_BOT = [
   { command: 'hoy', description: '☀️ Todo lo programado para hoy (viajes, citas, santos)' },
   { command: 'traslados', description: '🚗 Próximos traslados de los padres y conductores' },
   { command: 'citas', description: '🏥 Próximas citas médicas de Papá y Mamá' },
+  { command: 'eventos', description: '🍖 Quedadas, barbacoas y comidas familiares' },
+  { command: 'vacaciones', description: '🏖️ Vacaciones familiares y quiénes van' },
   { command: 'cumples', description: '🎂 Cumpleaños del mes en curso' },
-  { command: 'santos', description: '✨ Santos de hoy y de la semana' },
+  { command: 'santos', description: '✨ Santos de hoy y del mes' },
   { command: 'ayuda', description: '❓ Ver lista de comandos y enlace a la Web' }
 ];
 

@@ -101,18 +101,22 @@ async function obtenerDatosFirestore() {
     console.warn('Sesión auth anónima ya activa o fallo:', e.message);
   }
 
-  const [snapCumples, snapMiembros, snapCitas, snapTraslados] = await Promise.all([
+  const [snapCumples, snapMiembros, snapCitas, snapTraslados, snapEventos, snapVacaciones] = await Promise.all([
     getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'cumpleanos')),
     getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'miembros')),
     getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'citasMedicas')),
-    getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'trasladosPadres'))
+    getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'trasladosPadres')),
+    getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'eventos')),
+    getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'vacaciones'))
   ]);
 
   return {
     cumpleanos: snapCumples.docs.map(d => ({ id: d.id, ...d.data() })),
     integrantes: snapMiembros.docs.map(d => ({ id: d.id, ...d.data() })),
     citasMedicas: snapCitas.docs.map(d => ({ id: d.id, ...d.data() })),
-    trasladosPadres: snapTraslados.docs.map(d => ({ id: d.id, ...d.data() }))
+    trasladosPadres: snapTraslados.docs.map(d => ({ id: d.id, ...d.data() })),
+    eventos: snapEventos.docs.map(d => ({ id: d.id, ...d.data() })),
+    vacaciones: snapVacaciones.docs.map(d => ({ id: d.id, ...d.data() }))
   };
 }
 
@@ -161,9 +165,11 @@ export default async function handler(req, res) {
           `Puedes consultarme lo que necesites usando estos comandos:\n\n` +
           `🚗 <b>/traslados</b> — Próximos viajes de los padres y quién conduce\n` +
           `🏥 <b>/citas</b> — Próximas citas médicas de Papá y Mamá\n` +
+          `🍖 <b>/eventos</b> — Barbacoas, comidas y quedadas familiares\n` +
+          `🏖️ <b>/vacaciones</b> — Períodos y lugares de vacaciones de la familia\n` +
           `☀️ <b>/hoy</b> — Todo lo previsto para hoy (viajes, médicos, santos...)\n` +
           `🎂 <b>/cumples</b> — Cumpleaños de este mes\n` +
-          `✨ <b>/santos</b> — Santos de hoy y de esta semana\n` +
+          `✨ <b>/santos</b> — Santos de hoy y de este mes\n` +
           `❓ <b>/ayuda</b> — Ver este menú de ayuda\n\n` +
           `👉 <a href="https://familiabarnuevoapp.web.app">Abrir FamilyApp en la Web</a>`;
         await enviarRespuestaTelegram(chatId, ayudaTxt, messageId);
@@ -218,7 +224,7 @@ export default async function handler(req, res) {
         const { trasladosPadres } = await obtenerDatosFirestore();
         const trasladosPendientes = trasladosPadres
           .filter(t => t.estado !== 'realizado' && t.fecha && t.fecha >= hoyIso)
-          .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
+          .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '') || (a.hora || '').localeCompare(b.hora || ''))
           .slice(0, 6);
 
         if (trasladosPendientes.length === 0) {
@@ -249,6 +255,105 @@ export default async function handler(req, res) {
         });
 
         resp += `👉 <a href="https://familiabarnuevoapp.web.app">Elegir preferencia o proponerse en la Web</a>`;
+        await enviarRespuestaTelegram(chatId, resp, messageId);
+        break;
+      }
+
+      case '/eventos':
+      case '/quedadas':
+      case '/barbacoas':
+      case '/planes': {
+        const { eventos } = await obtenerDatosFirestore();
+        const eventosFuturos = (eventos || [])
+          .filter(e => {
+            const fechaLimite = e.fechaFin || e.fecha;
+            return fechaLimite && fechaLimite >= hoyIso;
+          })
+          .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '') || (a.hora || '').localeCompare(b.hora || ''))
+          .slice(0, 8);
+
+        if (eventosFuturos.length === 0) {
+          const resp = `🍖 <b>Planes y Quedadas Familiares</b>\n\n` +
+            `No hay barbacoas o quedadas programadas próximamente.\n\n` +
+            `👉 <a href="https://familiabarnuevoapp.web.app">Proponer una comida o quedada en la Web</a>`;
+          await enviarRespuestaTelegram(chatId, resp, messageId);
+          break;
+        }
+
+        let resp = `🍖 <b>Próximas Barbacoas y Quedadas (${eventosFuturos.length}):</b>\n\n`;
+        eventosFuturos.forEach((evt, idx) => {
+          const diffDias = Math.round((new Date(evt.fecha).getTime() - new Date(hoyIso).getTime()) / (1000 * 60 * 60 * 24));
+          const avisoTiempo = diffDias === 0 ? '🚨 <b>¡HOY!</b>' : diffDias === 1 ? '⏳ <b>Mañana</b>' : `En ${diffDias} días`;
+
+          let fechaTxt = formatearFechaBonita(evt.fecha);
+          if (evt.fechaFin && evt.fechaFin !== evt.fecha) {
+            fechaTxt = `Del ${formatearFechaBonita(evt.fecha)} al ${formatearFechaBonita(evt.fechaFin)}`;
+          }
+
+          const horaTxt = evt.hora ? ` a las ${evt.hora}` : '';
+          const asistentes = (evt.asistentes && evt.asistentes.length > 0)
+            ? evt.asistentes.join(', ')
+            : '<i>Nadie confirmado aún</i>';
+
+          resp += `${idx + 1}. <b>${evt.titulo}</b> (${avisoTiempo})\n` +
+            `• 📅 ${fechaTxt}${horaTxt}\n` +
+            `• 📍 Lugar: ${evt.lugar || 'Por definir'}\n` +
+            `• 👥 Confirmados (${evt.asistentes?.length || 0}): ${asistentes}\n`;
+
+          if (evt.descripcion) {
+            resp += `• 📝 <i>"${evt.descripcion}"</i>\n`;
+          }
+          resp += '\n';
+        });
+
+        resp += `👉 <a href="https://familiabarnuevoapp.web.app">Apuntarse o proponer en la Web</a>`;
+        await enviarRespuestaTelegram(chatId, resp, messageId);
+        break;
+      }
+
+      case '/vacaciones': {
+        const { vacaciones } = await obtenerDatosFirestore();
+        const vacsFuturas = (vacaciones || [])
+          .filter(v => {
+            const fechaLimite = v.fechaFin || v.fechaInicio;
+            return fechaLimite && fechaLimite >= hoyIso;
+          })
+          .sort((a, b) => (a.fechaInicio || '').localeCompare(b.fechaInicio || ''));
+
+        if (vacsFuturas.length === 0) {
+          const resp = `🏖️ <b>Vacaciones Familiares</b>\n\n` +
+            `No hay períodos de vacaciones activos o próximos registrados.\n\n` +
+            `👉 <a href="https://familiabarnuevoapp.web.app">Registrar vacaciones en la Web</a>`;
+          await enviarRespuestaTelegram(chatId, resp, messageId);
+          break;
+        }
+
+        let resp = `🏖️ <b>Próximas Vacaciones Familiares (${vacsFuturas.length}):</b>\n\n`;
+        vacsFuturas.forEach((vac, idx) => {
+          let periodoTxt = '';
+          if (vac.fechaInicio && vac.fechaFin) {
+            periodoTxt = `Del ${formatearFechaBonita(vac.fechaInicio)} al ${formatearFechaBonita(vac.fechaFin)}`;
+          } else if (vac.fechaInicio) {
+            periodoTxt = `A partir del ${formatearFechaBonita(vac.fechaInicio)}`;
+          } else {
+            periodoTxt = 'Fechas por definir';
+          }
+
+          const quienes = (vac.quienes && vac.quienes.length > 0)
+            ? vac.quienes.join(', ')
+            : 'Toda la familia';
+
+          resp += `${idx + 1}. 📍 <b>${vac.lugar}</b>\n` +
+            `• 📅 ${periodoTxt}\n` +
+            `• 👥 Quiénes: <b>${quienes}</b>\n`;
+
+          if (vac.nota) {
+            resp += `• 📝 <i>"${vac.nota}"</i>\n`;
+          }
+          resp += '\n';
+        });
+
+        resp += `👉 <a href="https://familiabarnuevoapp.web.app">Ver mapa y calendario en la Web</a>`;
         await enviarRespuestaTelegram(chatId, resp, messageId);
         break;
       }
