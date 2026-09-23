@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
-import { getFirestore, collection, getDocs } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { runDailyDigest } from '../scripts/telegram_daily_cron.mjs';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCPc3BTDzRFts7TJYhEbrFjZ-fre5nsmXQ",
@@ -101,14 +102,21 @@ async function obtenerDatosFirestore() {
     console.warn('Sesión auth anónima ya activa o fallo:', e.message);
   }
 
-  const [snapCumples, snapMiembros, snapCitas, snapTraslados, snapEventos, snapVacaciones] = await Promise.all([
+  const docUbicacion = doc(db, 'artifacts', APP_ID, 'public', 'config_ubicacion_padres');
+
+  const [snapCumples, snapMiembros, snapCitas, snapTraslados, snapEventos, snapVacaciones, snapUbicacion] = await Promise.all([
     getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'cumpleanos')),
     getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'miembros')),
     getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'citasMedicas')),
     getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'trasladosPadres')),
     getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'eventos')),
-    getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'vacaciones'))
+    getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'vacaciones')),
+    getDoc(docUbicacion)
   ]);
+
+  const ubicacionPadres = (snapUbicacion && snapUbicacion.exists() && snapUbicacion.data()?.ubicacion)
+    ? snapUbicacion.data().ubicacion
+    : 'Alcalá (Esgaravita)';
 
   return {
     cumpleanos: snapCumples.docs.map(d => ({ id: d.id, ...d.data() })),
@@ -116,13 +124,24 @@ async function obtenerDatosFirestore() {
     citasMedicas: snapCitas.docs.map(d => ({ id: d.id, ...d.data() })),
     trasladosPadres: snapTraslados.docs.map(d => ({ id: d.id, ...d.data() })),
     eventos: snapEventos.docs.map(d => ({ id: d.id, ...d.data() })),
-    vacaciones: snapVacaciones.docs.map(d => ({ id: d.id, ...d.data() }))
+    vacaciones: snapVacaciones.docs.map(d => ({ id: d.id, ...d.data() })),
+    ubicacionPadres
   };
 }
 
 export default async function handler(req, res) {
-  // Manejo de peticiones GET de prueba/health check
+  // Manejo de peticiones GET de prueba/health check o ejecución de CRON
   if (req.method === 'GET') {
+    const isCron = req.query?.cron === 'daily' || (req.url && req.url.includes('cron=daily'));
+    if (isCron) {
+      try {
+        const resultado = await runDailyDigest(false);
+        return res.status(200).json({ ok: true, cron: 'daily', resultado });
+      } catch (cronErr) {
+        console.error('Error ejecutando cron daily:', cronErr);
+        return res.status(500).json({ ok: false, error: cronErr.message });
+      }
+    }
     return res.status(200).json({ ok: true, message: 'FamilyApp Telegram Webhook activo y listo' });
   }
 
@@ -221,7 +240,7 @@ export default async function handler(req, res) {
       }
 
       case '/traslados': {
-        const { trasladosPadres } = await obtenerDatosFirestore();
+        const { trasladosPadres, ubicacionPadres } = await obtenerDatosFirestore();
         const trasladosPendientes = trasladosPadres
           .filter(t => t.estado !== 'realizado' && t.fecha && t.fecha >= hoyIso)
           .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '') || (a.hora || '').localeCompare(b.hora || ''))
@@ -229,13 +248,16 @@ export default async function handler(req, res) {
 
         if (trasladosPendientes.length === 0) {
           const resp = `🚗 <b>Traslados de los Padres</b>\n\n` +
+            `🏡 <b>Ubicación actual:</b> <b>${ubicacionPadres}</b>\n\n` +
             `✅ ¡No hay traslados pendientes programados actualmente!\n\n` +
             `👉 <a href="https://familiabarnuevoapp.web.app">Planificar viaje en FamilyApp</a>`;
           await enviarRespuestaTelegram(chatId, resp, messageId);
           break;
         }
 
-        let resp = `🚗 <b>Próximos Traslados de los Padres (${trasladosPendientes.length}):</b>\n\n`;
+        let resp = `🚗 <b>Traslados de los Padres</b>\n` +
+          `🏡 <b>Ubicación actual:</b> <b>${ubicacionPadres}</b>\n\n` +
+          `<b>Próximos traslados programados (${trasladosPendientes.length}):</b>\n\n`;
         trasladosPendientes.forEach((t, idx) => {
           const diffDias = Math.round((new Date(t.fecha).getTime() - new Date(hoyIso).getTime()) / (1000 * 60 * 60 * 24));
           const avisoTiempo = diffDias === 0 ? '🚨 <b>¡HOY!</b>' : diffDias === 1 ? '⏳ <b>Mañana</b>' : `En ${diffDias} días`;
@@ -359,7 +381,7 @@ export default async function handler(req, res) {
       }
 
       case '/hoy': {
-        const { citasMedicas, trasladosPadres, cumpleanos, integrantes, eventos, vacaciones } = await obtenerDatosFirestore();
+        const { citasMedicas, trasladosPadres, cumpleanos, integrantes, eventos, vacaciones, ubicacionPadres } = await obtenerDatosFirestore();
 
         const normalizarHora = (hora, momentoDia) => {
           if (hora && /^\d{1,2}:\d{2}$/.test(hora.trim())) {
@@ -406,7 +428,8 @@ export default async function handler(req, res) {
           }
         });
 
-        let resp = `☀️ <b>Previsión para HOY (${formatearFechaBonita(hoyIso)}):</b>\n\n`;
+        let resp = `☀️ <b>Previsión para HOY (${formatearFechaBonita(hoyIso)}):</b>\n` +
+          `🏡 <b>Ubicación de Papá y Mamá:</b> <b>${ubicacionPadres}</b>\n\n`;
 
         if (cumplesHoy.length > 0) {
           resp += `🎂 <b>¡Cumpleaños de hoy!</b>\n` + cumplesHoy.map(c => {

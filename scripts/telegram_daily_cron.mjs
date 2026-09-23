@@ -115,14 +115,16 @@ export async function runDailyDigest(force = false) {
   const colCitas = collection(db, 'artifacts', APP_ID, 'public', 'data', 'citasMedicas');
   const colTraslados = collection(db, 'artifacts', APP_ID, 'public', 'data', 'trasladosPadres');
   const colVacaciones = collection(db, 'artifacts', APP_ID, 'public', 'data', 'vacaciones');
+  const docUbicacion = doc(db, 'artifacts', APP_ID, 'public', 'config_ubicacion_padres');
 
-  const [snapCumples, snapMiembros, snapEventos, snapCitas, snapTraslados, snapVacaciones] = await Promise.all([
+  const [snapCumples, snapMiembros, snapEventos, snapCitas, snapTraslados, snapVacaciones, snapUbicacion] = await Promise.all([
     getDocs(colCumples),
     getDocs(colMiembros),
     getDocs(colEventos),
     getDocs(colCitas),
     getDocs(colTraslados),
-    getDocs(colVacaciones)
+    getDocs(colVacaciones),
+    getDoc(docUbicacion)
   ]);
 
   const cumpleanos = snapCumples.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -131,6 +133,9 @@ export async function runDailyDigest(force = false) {
   const citasMedicas = snapCitas.docs.map(d => ({ id: d.id, ...d.data() }));
   const trasladosPadres = snapTraslados.docs.map(d => ({ id: d.id, ...d.data() }));
   const vacaciones = snapVacaciones.docs.map(d => ({ id: d.id, ...d.data() }));
+  const ubicacionPadres = (snapUbicacion && snapUbicacion.exists() && snapUbicacion.data()?.ubicacion)
+    ? snapUbicacion.data().ubicacion
+    : 'Alcalá (Esgaravita)';
 
   // 2. Filtrar celebraciones y avisos de hoy y mañana
   const cumplesDeHoy = cumpleanos.filter(c => {
@@ -275,6 +280,7 @@ export async function runDailyDigest(force = false) {
 
   // 3. Construir mensaje
   let msg = `☀️ <b>¡Buenos días Familia Barnuevo!</b>\n\n`;
+  msg += `🏡 <b>Ubicación de Papá y Mamá:</b> <b>${ubicacionPadres}</b>\n\n`;
 
   if (cumplesDeHoy.length > 0) {
     cumplesDeHoy.forEach(c => {

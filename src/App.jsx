@@ -1675,8 +1675,8 @@ export default function App() {
     if (!cumpleanos || cumpleanos.length === 0) return;
 
     const hoy = new Date();
-    // Salvaguarda horaria: no enviar nunca de madrugada desde el navegador (solo a partir de las 07:00 AM)
-    if (hoy.getHours() < 7) {
+    // Salvaguarda horaria: solo enviar como respaldo matinal entre las 07:00 y las 09:00 AM hora local
+    if (hoy.getHours() < 7 || hoy.getHours() >= 9) {
       return;
     }
     const hoyIso = getFechaHoyLocal(hoy);
@@ -1855,6 +1855,7 @@ export default function App() {
         };
 
         let msg = `☀️ <b>¡Buenos días Familia Barnuevo!</b>\n\n`;
+        msg += `🏡 <b>Ubicación de Papá y Mamá:</b> <b>${ubicacionActualPadres}</b>\n\n`;
 
         if (cumplesDeHoy.length > 0) {
           cumplesDeHoy.forEach(c => {
@@ -3531,6 +3532,17 @@ export default function App() {
           enviarEncuestaTelegram(preg, pollOpts);
         }
 
+        // Actualizar automáticamente la ubicación de los padres al destino del traslado registrado
+        const destNorm = (trasladoData.destino || '').toLowerCase().includes('madrid')
+          ? 'Madrid'
+          : ((trasladoData.destino || '').toLowerCase().includes('alcalá') || (trasladoData.destino || '').toLowerCase().includes('esgaravita'))
+            ? 'Alcalá (Esgaravita)'
+            : trasladoData.destino;
+
+        if (destNorm) {
+          handleChangeUbicacionPadres(destNorm, false);
+        }
+
         resetTrasladoForm();
       } catch (err) {
         console.error(err);
@@ -3553,6 +3565,17 @@ export default function App() {
         const pollOpts = opcionesFinales.map((o, idx) => `${o.conductor || `Opción ${idx + 1}`} (${o.hora || 'horario a convenir'})`);
         const preg = `🚗 Traslado ${trasladoData.origen} ➔ ${trasladoData.destino} (${formatearFechaStr(trasladoData.fecha)}): ¿Qué opción prefieren Papá y Mamá?`;
         enviarEncuestaTelegram(preg, pollOpts);
+      }
+
+      // Actualizar automáticamente la ubicación de los padres al destino del traslado registrado
+      const destNorm = (trasladoData.destino || '').toLowerCase().includes('madrid')
+        ? 'Madrid'
+        : ((trasladoData.destino || '').toLowerCase().includes('alcalá') || (trasladoData.destino || '').toLowerCase().includes('esgaravita'))
+          ? 'Alcalá (Esgaravita)'
+          : trasladoData.destino;
+
+      if (destNorm) {
+        handleChangeUbicacionPadres(destNorm, false);
       }
 
       resetTrasladoForm();
@@ -3713,15 +3736,21 @@ export default function App() {
   const handleToggleEstadoTraslado = async (traslado) => {
     const nuevoEstado = traslado.estado === 'realizado' ? 'pendiente' : 'realizado';
     const isLocal = typeof traslado.id === 'string' && traslado.id.startsWith('tras_');
+    const destNorm = (traslado.destino || '').toLowerCase().includes('madrid')
+      ? 'Madrid'
+      : ((traslado.destino || '').toLowerCase().includes('alcalá') || (traslado.destino || '').toLowerCase().includes('esgaravita'))
+        ? 'Alcalá (Esgaravita)'
+        : traslado.destino;
+
     if (isCloudMode && user && !isLocalMode && !isLocal) {
       try {
         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'trasladosPadres', traslado.id), {
           estado: nuevoEstado
         });
         if (nuevoEstado === 'realizado') {
-          handleChangeUbicacionPadres(traslado.destino, false);
+          handleChangeUbicacionPadres(destNorm, false);
         }
-        triggerToast(nuevoEstado === 'realizado' ? `✅ Traslado marcado como realizado (Padres en ${traslado.destino})` : '⏳ Traslado reactivado');
+        triggerToast(nuevoEstado === 'realizado' ? `✅ Traslado realizado (Padres en ${destNorm})` : '⏳ Traslado reactivado');
       } catch (err) {
         console.error(err);
       }
@@ -3730,9 +3759,9 @@ export default function App() {
       setTrasladosPadres(updated);
       persistLocal('trasladosPadres', updated);
       if (nuevoEstado === 'realizado') {
-        handleChangeUbicacionPadres(traslado.destino, false);
+        handleChangeUbicacionPadres(destNorm, false);
       }
-      triggerToast(nuevoEstado === 'realizado' ? `✅ Traslado marcado como realizado (Padres en ${traslado.destino})` : '⏳ Traslado reactivado');
+      triggerToast(nuevoEstado === 'realizado' ? `✅ Traslado realizado (Padres en ${destNorm})` : '⏳ Traslado reactivado');
     }
   };
 
@@ -3761,6 +3790,7 @@ export default function App() {
   const handleChangeUbicacionPadres = async (nuevaUbicacion, notify = true) => {
     setUbicacionActualPadres(nuevaUbicacion);
     localStorage.setItem('family_app_ubicacion_padres', nuevaUbicacion);
+    localStorage.setItem('family_app_ubicacion_padres_fecha', new Date().toISOString());
 
     if (isCloudMode && user && !isLocalMode) {
       try {
@@ -3775,11 +3805,38 @@ export default function App() {
       }
     }
 
-    triggerToast(`📍 Ubicación de los padres actualizada: ${nuevaUbicacion}`);
+    triggerToast(`📍 Ubicación de los padres: ${nuevaUbicacion}`);
     if (notify) {
       enviarMensajeTelegram(`📍 <b>Aviso Familiar:</b> Los padres están actualmente en <b>${nuevaUbicacion}</b> (actualizado por ${usuarioActivo}).`);
     }
   };
+
+  // Sincronización inteligente de la ubicación de los padres según traslados
+  useEffect(() => {
+    if (!trasladosPadres || trasladosPadres.length === 0) return;
+    const hoyIso = getFechaHoyLocal(new Date());
+
+    const trasladosPasados = trasladosPadres
+      .filter(t => t.fecha && (t.fecha <= hoyIso || t.estado === 'realizado'))
+      .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '') || (b.hora || '').localeCompare(a.hora || ''));
+
+    if (trasladosPasados.length > 0) {
+      const ultimo = trasladosPasados[0];
+      const destNorm = (ultimo.destino || '').toLowerCase().includes('madrid')
+        ? 'Madrid'
+        : ((ultimo.destino || '').toLowerCase().includes('alcalá') || (ultimo.destino || '').toLowerCase().includes('esgaravita'))
+          ? 'Alcalá (Esgaravita)'
+          : ultimo.destino;
+
+      if (destNorm && destNorm !== ubicacionActualPadres) {
+        const ultimaConfig = localStorage.getItem('family_app_ubicacion_padres_fecha');
+        if (!ultimaConfig || new Date(ultimaConfig).getTime() < new Date(ultimo.fecha).getTime()) {
+          setUbicacionActualPadres(destNorm);
+          localStorage.setItem('family_app_ubicacion_padres', destNorm);
+        }
+      }
+    }
+  }, [trasladosPadres]);
 
   const handleEnviarResumenTrasladosTelegram = async () => {
     const pendientes = trasladosPadres

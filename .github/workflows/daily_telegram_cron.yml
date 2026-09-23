@@ -1,0 +1,29 @@
+name: FamilyApp Telegram Daily 07:00 AM Cron
+
+on:
+  schedule:
+    # 05:00 UTC corresponde a las 07:00 AM en horario de verano en Madrid (CEST / UTC+2)
+    # 06:00 UTC corresponde a las 07:00 AM en horario de invierno en Madrid (CET / UTC+1)
+    # El script tiene control interno: si aún no son las 7:00 AM en España o si ya se envió hoy, finaliza sin duplicar.
+    - cron: '0 5 * * *'
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  daily-digest:
+    name: Enviar Resumen Matinal a Telegram (07:00 AM)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar dependencias
+        run: npm install firebase
+
+      - name: Ejecutar resumen diario puntual a las 07:00 AM
+        run: node scripts/telegram_daily_cron.mjs
