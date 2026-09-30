@@ -67,7 +67,15 @@ import {
   ShieldAlert,
   ClipboardList,
   FileCheck,
-  Ambulance
+  Ambulance,
+  Mic,
+  Wallet,
+  Receipt,
+  Split,
+  Copy,
+  Lock,
+  Unlock,
+  Image
 } from 'lucide-react';
 import { extraerDatosCitaDesdeFoto } from './ocrCitas';
 
@@ -574,16 +582,20 @@ const exportFamilyCalendarIcs = (cumples = [], eventos = []) => {
 const TELEGRAM_BOT_TOKEN = '8563679097:AAFit3k4k38GYIeFCJCAsdT9vVz2ylToi6E';
 const TELEGRAM_CHAT_ID = '-1004328933116';
 
-const enviarMensajeTelegram = async (texto) => {
+const enviarMensajeTelegram = async (texto, replyMarkup = null) => {
   try {
+    const payload = {
+      chat_id: TELEGRAM_CHAT_ID,
+      text: texto,
+      parse_mode: 'HTML'
+    };
+    if (replyMarkup) {
+      payload.reply_markup = replyMarkup;
+    }
     const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: TELEGRAM_CHAT_ID,
-        text: texto,
-        parse_mode: 'HTML'
-      })
+      body: JSON.stringify(payload)
     });
     const data = await res.json();
     return data && data.ok;
@@ -878,6 +890,209 @@ const CONTACTOS_EMERGENCIA_PREDEFINIDOS = [
   }
 ];
 
+// --- PRESELECCIONES Y UTILIDADES PARA BOTES Y GASTOS (FASE 3) ---
+const BOTES_GASTOS_PREDEFINIDOS = [
+  {
+    id: 'bote_1',
+    titulo: '🍖 Barbacoa de Verano en Munibáñez',
+    fecha: '2026-08-12',
+    descripcion: 'Bote común para la barbacoa familiar anual, comida y bebidas',
+    cerrado: false,
+    participantes: ['Isaac (Isik)', 'Rebeca', 'María', 'Bartek', 'Javier', 'Carlos', 'Sofía'],
+    gastos: [
+      {
+        id: 'g_1',
+        concepto: 'Carne de buey, panceta, chorizos y carbón',
+        importe: 112.50,
+        pagadoPor: 'Isaac (Isik)',
+        participantes: ['Isaac (Isik)', 'Rebeca', 'María', 'Bartek', 'Javier', 'Carlos', 'Sofía'],
+        fecha: '2026-08-12'
+      },
+      {
+        id: 'g_2',
+        concepto: 'Bebidas, refrescos, cervezas y hielo',
+        importe: 48.00,
+        pagadoPor: 'Rebeca',
+        participantes: ['Isaac (Isik)', 'Rebeca', 'María', 'Bartek', 'Javier', 'Carlos', 'Sofía'],
+        fecha: '2026-08-12'
+      },
+      {
+        id: 'g_3',
+        concepto: 'Pan de pueblo, aperitivos y ensaladas',
+        importe: 26.50,
+        pagadoPor: 'María',
+        participantes: ['Isaac (Isik)', 'Rebeca', 'María', 'Bartek', 'Javier', 'Carlos', 'Sofía'],
+        fecha: '2026-08-12'
+      }
+    ],
+    creadoPor: 'Isaac (Isik)',
+    creadoEl: '2026-08-12T12:00:00.000Z'
+  },
+  {
+    id: 'bote_2',
+    titulo: '🎁 Regalo Conjunto de los 7 Hermanos',
+    fecha: '2026-06-20',
+    descripcion: 'Regalo sorpresa para las bodas de oro de los padres',
+    cerrado: false,
+    participantes: ['Isaac (Isik)', 'Rebeca', 'María', 'Javier', 'Carlos', 'Sofía', 'Juan'],
+    gastos: [
+      {
+        id: 'g_4',
+        concepto: 'Álbum digital encuadernado y reloj grabado',
+        importe: 210.00,
+        pagadoPor: 'Rebeca',
+        participantes: ['Isaac (Isik)', 'Rebeca', 'María', 'Javier', 'Carlos', 'Sofía', 'Juan'],
+        fecha: '2026-06-20'
+      }
+    ],
+    creadoPor: 'Rebeca',
+    creadoEl: '2026-06-20T10:00:00.000Z'
+  }
+];
+
+function calcularBalanceBote(bote) {
+  if (!bote || !bote.participantes || bote.participantes.length === 0) {
+    return { total: 0, balances: {}, deudas: [] };
+  }
+
+  const gastos = bote.gastos || [];
+  let total = 0;
+  const pagadoPor = {};
+  const debePagar = {};
+
+  bote.participantes.forEach(p => {
+    pagadoPor[p] = 0;
+    debePagar[p] = 0;
+  });
+
+  gastos.forEach(g => {
+    const imp = parseFloat(g.importe) || 0;
+    total += imp;
+    const pagador = g.pagadoPor;
+    if (pagadoPor[pagador] !== undefined) {
+      pagadoPor[pagador] += imp;
+    } else {
+      pagadoPor[pagador] = imp;
+    }
+
+    const particGasto = (g.participantes && g.participantes.length > 0) ? g.participantes : bote.participantes;
+    const cuota = imp / (particGasto.length || 1);
+    particGasto.forEach(p => {
+      if (debePagar[p] !== undefined) {
+        debePagar[p] += cuota;
+      } else {
+        debePagar[p] = cuota;
+      }
+    });
+  });
+
+  const balances = {};
+  const acreedores = [];
+  const deudores = [];
+
+  const todos = Array.from(new Set([...bote.participantes, ...Object.keys(pagadoPor), ...Object.keys(debePagar)]));
+  todos.forEach(p => {
+    const pag = pagadoPor[p] || 0;
+    const deb = debePagar[p] || 0;
+    const net = Math.round((pag - deb) * 100) / 100;
+    balances[p] = { pagado: pag, debido: deb, neto: net };
+    if (net > 0.01) {
+      acreedores.push({ persona: p, saldo: net });
+    } else if (net < -0.01) {
+      deudores.push({ persona: p, saldo: -net });
+    }
+  });
+
+  const deudas = [];
+  let i = 0;
+  let j = 0;
+
+  acreedores.sort((a, b) => b.saldo - a.saldo);
+  deudores.sort((a, b) => b.saldo - a.saldo);
+
+  while (i < deudores.length && j < acreedores.length) {
+    const deudor = deudores[i];
+    const acreedor = acreedores[j];
+    const pago = Math.min(deudor.saldo, acreedor.saldo);
+
+    if (pago > 0.01) {
+      deudas.push({
+        de: deudor.persona,
+        a: acreedor.persona,
+        cantidad: Math.round(pago * 100) / 100
+      });
+    }
+
+    deudor.saldo -= pago;
+    acreedor.saldo -= pago;
+
+    if (deudor.saldo < 0.01) i++;
+    if (acreedor.saldo < 0.01) j++;
+  }
+
+  return {
+    total: Math.round(total * 100) / 100,
+    balances,
+    deudas
+  };
+}
+
+// --- ÁLBUM DE RECUERDOS FAMILIAR (FASE 5) ---
+const ALBUM_FOTOS_PREDEFINIDAS = [
+  {
+    id: 'foto_1',
+    titulo: '🍖 Barbacoa en Munibáñez',
+    lugar: 'Finca Munibáñez',
+    fecha: '2026-05-15',
+    categoria: 'barbacoas',
+    autor: 'Isaac',
+    descripcion: 'Inolvidable día en familia preparando las brasas y disfrutando del jardín con los padres y todos los hermanos.',
+    imagenUrl: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=900&q=80',
+    likes: ['Isaac', 'Rebeca', 'Bartek'],
+    comentarios: [
+      { id: 'c1', autor: 'Rebeca', texto: '¡Qué ricas salieron las chuletillas!', fecha: '2026-05-15T18:30:00Z' }
+    ]
+  },
+  {
+    id: 'foto_2',
+    titulo: '🎂 80 Cumpleaños de Papá',
+    lugar: 'Alcalá de Henares',
+    fecha: '2026-03-20',
+    categoria: 'cumples',
+    autor: 'Rebeca',
+    descripcion: 'Celebrando con papá rodeado de toda la familia, tarta casera y regalos.',
+    imagenUrl: 'https://images.unsplash.com/photo-1464349095431-e9a21285b5f3?auto=format&fit=crop&w=900&q=80',
+    likes: ['Rebeca', 'María', 'Carlos', 'Isaac'],
+    comentarios: [
+      { id: 'c2', autor: 'Carlos', texto: '¡Qué gran recuerdo para la historia familiar!', fecha: '2026-03-20T21:00:00Z' }
+    ]
+  },
+  {
+    id: 'foto_3',
+    titulo: '🌊 Atardecer de Verano en Mazarrón',
+    lugar: 'Puerto de Mazarrón',
+    fecha: '2025-08-14',
+    categoria: 'vacaciones',
+    autor: 'David',
+    descripcion: 'Paseo al atardecer por la playa con mamá y papá tomando un helado.',
+    imagenUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=900&q=80',
+    likes: ['David', 'Isaac', 'Sofía'],
+    comentarios: []
+  },
+  {
+    id: 'foto_4',
+    titulo: '🕰️ Recuerdos de la Infancia',
+    lugar: 'Madrid',
+    fecha: '1995-12-24',
+    categoria: 'recuerdos',
+    autor: 'Isaac',
+    descripcion: 'Nochebuena todos juntos de pequeños con los abuelos en Madrid.',
+    imagenUrl: 'https://images.unsplash.com/photo-1511895426328-dc8714191300?auto=format&fit=crop&w=900&q=80',
+    likes: ['Isaac', 'Rebeca', 'María', 'Javier'],
+    comentarios: []
+  }
+];
+
 const generateGoogleCalendarUrlForTraslado = (traslado) => {
   if (!traslado || !traslado.fecha) return '#';
   const cleanFecha = traslado.fecha.replace(/-/g, '');
@@ -907,10 +1122,27 @@ const generateGoogleCalendarUrlForTraslado = (traslado) => {
 export default function App() {
   // --- ESTADOS DEL SISTEMA ---
   const [user, setUser] = useState(null);
-  const [activeTab, setActiveTab] = useState('inicio');
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      if (typeof window !== 'undefined' && window.location.search) {
+        const params = new URLSearchParams(window.location.search);
+        const t = params.get('tab');
+        if (t && ['inicio', 'traslados', 'citas', 'album', 'arbol', 'calendario', 'vacaciones', 'eventos', 'cumples', 'ideas'].includes(t)) {
+          return t;
+        }
+      }
+    } catch (e) {}
+    return 'inicio';
+  });
   const [loading, setLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState(null);
   const [isLocalMode, setIsLocalMode] = useState(!isCloudMode);
+
+  // --- ESTADOS ASISTENTE INTELIGENTE (LENGUAJE NATURAL) ---
+  const [showAsistenteModal, setShowAsistenteModal] = useState(false);
+  const [textoAsistente, setTextoAsistente] = useState('');
+  const [analisisAsistente, setAnalisisAsistente] = useState(null);
+  const [asistenteEscuchando, setAsistenteEscuchando] = useState(false);
 
   // --- PERSPECTIVA DE USUARIO ACTIVO ("¿Quién eres tú?") ---
   const [usuarioActivo, setUsuarioActivo] = useState(() => {
@@ -950,6 +1182,39 @@ export default function App() {
   const [medicacionPadres, setMedicacionPadres] = useState(() => getInitialState('medicacionPadres', MEDICACION_PREDEFINIDA));
   const [historialMedico, setHistorialMedico] = useState(() => getInitialState('historialMedico', HISTORIAL_MEDICO_PREDEFINIDO));
   const [contactosEmergencia, setContactosEmergencia] = useState(() => getInitialState('contactosEmergencia', CONTACTOS_EMERGENCIA_PREDEFINIDOS));
+  const [botesGastos, setBotesGastos] = useState(() => getInitialState('botesGastos', BOTES_GASTOS_PREDEFINIDOS));
+  const [fotosAlbum, setFotosAlbum] = useState(() => getInitialState('albumFotos', ALBUM_FOTOS_PREDEFINIDAS));
+  const [filtroAlbum, setFiltroAlbum] = useState('todos');
+  const [showSubirFotoModal, setShowSubirFotoModal] = useState(false);
+  const [fotoSeleccionadaLightbox, setFotoSeleccionadaLightbox] = useState(null);
+  const [nuevoComentarioTexto, setNuevoComentarioTexto] = useState({});
+  const [nuevaFoto, setNuevaFoto] = useState({
+    titulo: '',
+    lugar: '',
+    fecha: new Date().toISOString().split('T')[0],
+    categoria: 'barbacoas',
+    autor: '',
+    imagenUrl: '',
+    descripcion: ''
+  });
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [isInstalledPWA, setIsInstalledPWA] = useState(false);
+  const [subTabEventos, setSubTabEventos] = useState('quedadas');
+  const [selectedBoteId, setSelectedBoteId] = useState('bote_1');
+  const [showBoteModal, setShowBoteModal] = useState(false);
+  const [showGastoModal, setShowGastoModal] = useState(false);
+  const [newBote, setNewBote] = useState({
+    titulo: '',
+    fecha: '',
+    descripcion: '',
+    participantes: ['Isaac (Isik)', 'Rebeca', 'María', 'Bartek', 'Javier', 'Carlos', 'Sofía', 'Juan']
+  });
+  const [newGasto, setNewGasto] = useState({
+    concepto: '',
+    importe: '',
+    pagadoPor: 'Isaac (Isik)',
+    participantes: ['Isaac (Isik)', 'Rebeca', 'María', 'Bartek', 'Javier', 'Carlos', 'Sofía', 'Juan']
+  });
   const [subTabSalud, setSubTabSalud] = useState('citas');
   const [filtroPacienteMedicacion, setFiltroPacienteMedicacion] = useState('todos');
   const [filtroPacienteHistorial, setFiltroPacienteHistorial] = useState('todos');
@@ -1644,6 +1909,7 @@ export default function App() {
       setMedicacionPadres(getInitialState('medicacionPadres', MEDICACION_PREDEFINIDA));
       setHistorialMedico(getInitialState('historialMedico', HISTORIAL_MEDICO_PREDEFINIDO));
       setContactosEmergencia(getInitialState('contactosEmergencia', CONTACTOS_EMERGENCIA_PREDEFINIDOS));
+      setBotesGastos(getInitialState('botesGastos', BOTES_GASTOS_PREDEFINIDOS));
       setLoading(false);
       return;
     }
@@ -1659,6 +1925,8 @@ export default function App() {
     const colTrasladosPadres = collection(db, 'artifacts', appId, 'public', 'data', 'trasladosPadres');
     const colMedicacionPadres = collection(db, 'artifacts', appId, 'public', 'data', 'medicacionPadres');
     const colHistorialMedico = collection(db, 'artifacts', appId, 'public', 'data', 'historialMedico');
+    const colBotesGastos = collection(db, 'artifacts', appId, 'public', 'data', 'botesGastos');
+    const colAlbumFotos = collection(db, 'artifacts', appId, 'public', 'data', 'albumFotos');
     const docUbicacion = doc(db, 'artifacts', appId, 'public', 'config_ubicacion_padres');
 
     const sembrarDatosSiVacios = async () => {
@@ -1735,6 +2003,20 @@ export default function App() {
         if (snapHistorial.empty) {
           for (const hist of HISTORIAL_MEDICO_PREDEFINIDO) {
             await addDoc(colHistorialMedico, hist);
+          }
+        }
+
+        const snapBotes = await getDocs(colBotesGastos);
+        if (snapBotes.empty) {
+          for (const bote of BOTES_GASTOS_PREDEFINIDOS) {
+            await addDoc(colBotesGastos, bote);
+          }
+        }
+
+        const snapAlbum = await getDocs(colAlbumFotos);
+        if (snapAlbum.empty) {
+          for (const foto of ALBUM_FOTOS_PREDEFINIDAS) {
+            await addDoc(colAlbumFotos, foto);
           }
         }
       } catch (err) {
@@ -1824,6 +2106,20 @@ export default function App() {
       setHistorialMedico(getInitialState('historialMedico', HISTORIAL_MEDICO_PREDEFINIDO));
     });
 
+    const unsubBotes = onSnapshot(colBotesGastos, (snapshot) => {
+      setBotesGastos(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => {
+      console.error("Error al suscribirse a botesGastos:", err);
+      setBotesGastos(getInitialState('botesGastos', BOTES_GASTOS_PREDEFINIDOS));
+    });
+
+    const unsubAlbum = onSnapshot(colAlbumFotos, (snapshot) => {
+      setFotosAlbum(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => {
+      console.error("Error al suscribirse a albumFotos:", err);
+      setFotosAlbum(getInitialState('albumFotos', ALBUM_FOTOS_PREDEFINIDAS));
+    });
+
     return () => {
       unsubMiembros();
       unsubVacaciones();
@@ -1835,8 +2131,31 @@ export default function App() {
       unsubUbicacion();
       unsubMedicacion();
       unsubHistorial();
+      unsubBotes();
+      unsubAlbum();
     };
   }, [user]);
+
+  // --- DETECCIÓN PWA & INSTALACIÓN (FASE 4) ---
+  useEffect(() => {
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+      setIsInstalledPWA(true);
+    }
+    const handler = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    const appInstalledHandler = () => {
+      setIsInstalledPWA(true);
+      setInstallPrompt(null);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    window.addEventListener('appinstalled', appInstalledHandler);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler);
+      window.removeEventListener('appinstalled', appInstalledHandler);
+    };
+  }, []);
 
   // --- LIMPIEZA AUTOMÁTICA DE CITAS Y TRASLADOS PASADOS ---
   const limpiezaRealizadaRef = useRef(false);
@@ -2975,8 +3294,16 @@ export default function App() {
       if (notifyTelegramOnEvent) {
         const accionTxt = isEditingEvent ? 'actualizado' : 'propuesto';
         const autorTxt = usuarioActivo.split(' ')[0];
-        const msgTg = `🍖 <b>¡Plan familiar ${accionTxt} por ${autorTxt}!</b>\n\n📌 <b>${eventData.titulo}</b>\n📅 Fecha: ${textoFechaEvento}\n📍 Lugar: ${eventData.lugar}\n${eventData.descripcion ? `📝 <i>"${eventData.descripcion}"</i>\n` : ''}\n👉 <a href="https://familiabarnuevoapp.web.app">Entrar a la app para confirmar</a>`;
-        enviarMensajeTelegram(msgTg);
+        const msgTg = `🍖 <b>¡Plan familiar ${accionTxt} por ${autorTxt}!</b>\n\n📌 <b>${eventData.titulo}</b>\n📅 Fecha: ${textoFechaEvento}\n📍 Lugar: ${eventData.lugar}\n${eventData.descripcion ? `📝 <i>"${eventData.descripcion}"</i>\n` : ''}\n👉 <a href="https://familiabarnuevoapp.web.app/?tab=eventos">Entrar a la app para confirmar</a>`;
+        
+        const replyMarkup = {
+          inline_keyboard: [
+            [
+              { text: "🍖 Ver Quedada / Asistir", url: "https://familiabarnuevoapp.web.app/?tab=eventos" }
+            ]
+          ]
+        };
+        enviarMensajeTelegram(msgTg, replyMarkup);
       }
 
       setNewEvent({ titulo: '', fecha: '', fechaFin: '', hora: '', lugar: '', ubicacionUrl: '', descripcion: '', asistentes: [] });
@@ -2984,6 +3311,429 @@ export default function App() {
       setIsEditingEvent(false);
       setEditingEventId(null);
     }
+  };
+
+  // --- GESTIÓN DE BOTES Y GASTOS COMPARTIDOS (FASE 3) ---
+  const handleSaveBote = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!newBote.titulo.trim()) {
+      alert('Por favor indica un título para el bote (ej: Barbacoa Munibáñez).');
+      return;
+    }
+
+    const boteData = {
+      titulo: newBote.titulo.trim(),
+      fecha: newBote.fecha || getFechaHoyLocal(new Date()),
+      descripcion: newBote.descripcion.trim(),
+      cerrado: false,
+      participantes: newBote.participantes && newBote.participantes.length > 0
+        ? newBote.participantes
+        : ['Isaac (Isik)', 'Rebeca', 'María', 'Bartek', 'Javier', 'Carlos', 'Sofía', 'Juan'],
+      gastos: [],
+      creadoPor: usuarioActivo,
+      creadoEl: new Date().toISOString()
+    };
+
+    if (isCloudMode && user && !isLocalMode) {
+      try {
+        const col = collection(db, 'artifacts', appId, 'public', 'data', 'botesGastos');
+        const docRef = await addDoc(col, boteData);
+        setSelectedBoteId(docRef.id);
+        triggerToast('💰 Bote creado en la nube con éxito');
+      } catch (err) {
+        console.error(err);
+        triggerToast(`Error al crear bote: ${err.message}`);
+      }
+    } else {
+      const newId = 'bote_' + Date.now();
+      const updated = [...botesGastos, { id: newId, ...boteData }];
+      setBotesGastos(updated);
+      persistLocal('botesGastos', updated);
+      setSelectedBoteId(newId);
+      triggerToast('💰 Bote creado localmente');
+    }
+
+    setNewBote({
+      titulo: '',
+      fecha: '',
+      descripcion: '',
+      participantes: ['Isaac (Isik)', 'Rebeca', 'María', 'Bartek', 'Javier', 'Carlos', 'Sofía', 'Juan']
+    });
+    setShowBoteModal(false);
+  };
+
+  const handleDeleteBote = async (boteId) => {
+    if (!confirm('¿Seguro que deseas eliminar este bote y todos sus gastos?')) return;
+    const isLocal = typeof boteId === 'string' && boteId.startsWith('bote_');
+    if (isCloudMode && user && !isLocalMode && !isLocal) {
+      try {
+        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'botesGastos', boteId));
+        triggerToast('🗑️ Bote eliminado');
+      } catch (err) {
+        console.error(err);
+        triggerToast(`Error: ${err.message}`);
+      }
+    } else {
+      const updated = botesGastos.filter(b => b.id !== boteId);
+      setBotesGastos(updated);
+      persistLocal('botesGastos', updated);
+      triggerToast('🗑️ Bote eliminado');
+    }
+  };
+
+  const handleToggleCerrarBote = async (bote) => {
+    const nuevoCerrado = !bote.cerrado;
+    const isLocal = typeof bote.id === 'string' && bote.id.startsWith('bote_');
+    if (isCloudMode && user && !isLocalMode && !isLocal) {
+      try {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'botesGastos', bote.id), {
+          cerrado: nuevoCerrado
+        });
+        triggerToast(nuevoCerrado ? '🔒 Bote cerrado y liquidado' : '🔓 Bote reabierto');
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      const updated = botesGastos.map(b => b.id === bote.id ? { ...b, cerrado: nuevoCerrado } : b);
+      setBotesGastos(updated);
+      persistLocal('botesGastos', updated);
+      triggerToast(nuevoCerrado ? '🔒 Bote cerrado y liquidado' : '🔓 Bote reabierto');
+    }
+  };
+
+  const handleSaveGasto = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!newGasto.concepto.trim()) {
+      alert('Por favor indica el concepto del gasto (ej: Carne, Refrescos).');
+      return;
+    }
+    const imp = parseFloat(newGasto.importe);
+    if (isNaN(imp) || imp <= 0) {
+      alert('Por favor indica un importe válido mayor que 0.');
+      return;
+    }
+
+    const bote = botesGastos.find(b => b.id === selectedBoteId) || botesGastos[0];
+    if (!bote) return;
+
+    const nuevoItemGasto = {
+      id: 'g_' + Date.now(),
+      concepto: newGasto.concepto.trim(),
+      importe: Math.round(imp * 100) / 100,
+      pagadoPor: newGasto.pagadoPor || usuarioActivo,
+      participantes: newGasto.participantes && newGasto.participantes.length > 0 ? newGasto.participantes : bote.participantes,
+      fecha: getFechaHoyLocal(new Date())
+    };
+
+    const gastosActualizados = [...(bote.gastos || []), nuevoItemGasto];
+    const isLocal = typeof bote.id === 'string' && bote.id.startsWith('bote_');
+
+    if (isCloudMode && user && !isLocalMode && !isLocal) {
+      try {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'botesGastos', bote.id), {
+          gastos: gastosActualizados
+        });
+        triggerToast(`🧾 Gasto de ${imp.toFixed(2)}€ añadido al bote`);
+      } catch (err) {
+        console.error(err);
+        triggerToast(`Error: ${err.message}`);
+      }
+    } else {
+      const updated = botesGastos.map(b => b.id === bote.id ? { ...b, gastos: gastosActualizados } : b);
+      setBotesGastos(updated);
+      persistLocal('botesGastos', updated);
+      triggerToast(`🧾 Gasto de ${imp.toFixed(2)}€ añadido al bote`);
+    }
+
+    setNewGasto({
+      concepto: '',
+      importe: '',
+      pagadoPor: usuarioActivo,
+      participantes: bote.participantes || ['Isaac (Isik)', 'Rebeca', 'María', 'Bartek', 'Javier', 'Carlos', 'Sofía', 'Juan']
+    });
+    setShowGastoModal(false);
+  };
+
+  const handleDeleteGasto = async (boteId, gastoId) => {
+    if (!confirm('¿Eliminar este ticket o gasto?')) return;
+    const bote = botesGastos.find(b => b.id === boteId);
+    if (!bote) return;
+
+    const gastosActualizados = (bote.gastos || []).filter(g => g.id !== gastoId);
+    const isLocal = typeof bote.id === 'string' && bote.id.startsWith('bote_');
+
+    if (isCloudMode && user && !isLocalMode && !isLocal) {
+      try {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'botesGastos', bote.id), {
+          gastos: gastosActualizados
+        });
+        triggerToast('🗑️ Gasto eliminado');
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      const updated = botesGastos.map(b => b.id === bote.id ? { ...b, gastos: gastosActualizados } : b);
+      setBotesGastos(updated);
+      persistLocal('botesGastos', updated);
+      triggerToast('🗑️ Gasto eliminado');
+    }
+  };
+
+  const handleEnviarCuentasTelegram = async (bote) => {
+    if (!bote) return;
+    const res = calcularBalanceBote(bote);
+
+    let msg = `💰 <b>Cuentas Claras: ${bote.titulo}</b>\n\n`;
+    msg += `💳 <b>Total Gastado:</b> <b>${res.total.toFixed(2)} €</b> (${(bote.gastos || []).length} tickets)\n\n`;
+
+    msg += `📊 <b>Desglose por hermano/familiar:</b>\n`;
+    for (const [persona, bal] of Object.entries(res.balances)) {
+      const emoji = bal.neto > 0.01 ? '🟢 Recibe' : (bal.neto < -0.01 ? '🔴 Debe' : '⚪ En paz');
+      msg += `• <b>${persona}:</b> Pagó ${bal.pagado.toFixed(2)} € (Cuota: ${bal.debido.toFixed(2)} €) ➔ <b>${emoji} ${Math.abs(bal.neto).toFixed(2)} €</b>\n`;
+    }
+    msg += `\n`;
+
+    if (res.deudas.length > 0) {
+      msg += `📲 <b>Reparto y pagos directos por Bizum:</b>\n`;
+      res.deudas.forEach(d => {
+        msg += `👉 <b>${d.de}</b> le envía <b>${d.cantidad.toFixed(2)} €</b> a <b>${d.a}</b>\n`;
+      });
+      msg += `\n`;
+    } else {
+      msg += `✨ <i>¡Todas las cuentas están cuadradas al céntimo!</i>\n\n`;
+    }
+
+    msg += `👉 <a href="https://familiabarnuevoapp.web.app/?tab=eventos">Ver cuentas y tickets en FamilyApp</a>`;
+
+    const replyMarkup = {
+      inline_keyboard: [
+        [
+          { text: "💰 Ver Cuentas y Bizum", url: "https://familiabarnuevoapp.web.app/?tab=eventos" }
+        ]
+      ]
+    };
+
+    triggerToast('Enviando liquidación de cuentas a Telegram...');
+    const ok = await enviarMensajeTelegram(msg, replyMarkup);
+    if (ok) {
+      triggerToast('✈️ ¡Cuentas enviadas a Telegram (Laos) con éxito!');
+    } else {
+      triggerToast('⚠️ Error al enviar a Telegram');
+    }
+  };
+
+  const handleCopiarBizum = (deudorOrDeuda, acreedor, cantidad, motivo) => {
+    let acreedorNom = '';
+    let importeNum = 0;
+    let motivoStr = motivo || 'FamilyApp';
+
+    if (typeof deudorOrDeuda === 'object' && deudorOrDeuda !== null) {
+      acreedorNom = deudorOrDeuda.a || '';
+      importeNum = Number(deudorOrDeuda.cantidad || 0);
+    } else {
+      acreedorNom = acreedor;
+      importeNum = Number(cantidad || 0);
+    }
+
+    const texto = `Hola ${acreedorNom}, te envío ${importeNum.toFixed(2)} € por Bizum para ${motivoStr} 👍`;
+    if (navigator && navigator.clipboard) {
+      navigator.clipboard.writeText(texto);
+      triggerToast(`📋 ¡Copiado texto Bizum: ${importeNum.toFixed(2)}€ a ${acreedorNom}!`);
+    } else {
+      alert(texto);
+    }
+  };
+
+  // --- GESTIÓN PWA INSTALABLE (FASE 4) ---
+  const handleInstalarApp = async () => {
+    if (installPrompt) {
+      installPrompt.prompt();
+      const { outcome } = await installPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setIsInstalledPWA(true);
+        setInstallPrompt(null);
+        triggerToast('🎉 ¡FamilyApp instalada con éxito en tu pantalla de inicio!');
+      }
+    } else {
+      alert("📲 Para instalar FamilyApp en tu móvil:\n\n• En iPhone/iPad (Safari): Pulsa el botón 'Compartir' (el cuadrado con flecha hacia arriba) y selecciona 'Añadir a la pantalla de inicio'.\n• En Android (Chrome): Pulsa en los tres puntos ⋮ arriba a la derecha y selecciona 'Instalar aplicación' o 'Añadir a pantalla principal'.");
+    }
+  };
+
+  // --- GESTIÓN ÁLBUM DE RECUERDOS (FASE 5) ---
+  const handleFotoArchivoSeleccionada = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1200;
+        const MAX_HEIGHT = 1200;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+        setNuevaFoto(prev => ({ ...prev, imagenUrl: dataUrl }));
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubirFoto = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!nuevaFoto.imagenUrl) {
+      alert("Por favor selecciona o sube una fotografía.");
+      return;
+    }
+    const autorNombre = matchedMember?.nombre || usuarioActivo || 'Familiar';
+    const fotoObj = {
+      titulo: nuevaFoto.titulo || 'Momento Familiar',
+      lugar: nuevaFoto.lugar || 'Familiar',
+      fecha: nuevaFoto.fecha || new Date().toISOString().split('T')[0],
+      categoria: nuevaFoto.categoria || 'barbacoas',
+      autor: autorNombre,
+      descripcion: nuevaFoto.descripcion || '',
+      imagenUrl: nuevaFoto.imagenUrl,
+      likes: [autorNombre],
+      comentarios: [],
+      creadoEl: new Date().toISOString()
+    };
+
+    if (isCloudMode && user && !isLocalMode) {
+      try {
+        await addDoc(colAlbumFotos, fotoObj);
+        triggerToast('📸 ¡Foto añadida al álbum familiar con éxito!');
+      } catch (err) {
+        console.error("Error guardando foto en Firestore:", err);
+        const localList = [{ id: 'f_' + Date.now(), ...fotoObj }, ...fotosAlbum];
+        setFotosAlbum(localList);
+        persistLocal('albumFotos', localList);
+        triggerToast('📸 Foto guardada localmente.');
+      }
+    } else {
+      const localList = [{ id: 'f_' + Date.now(), ...fotoObj }, ...fotosAlbum];
+      setFotosAlbum(localList);
+      persistLocal('albumFotos', localList);
+      triggerToast('📸 Foto guardada localmente.');
+    }
+
+    setNuevaFoto({
+      titulo: '',
+      lugar: '',
+      fecha: new Date().toISOString().split('T')[0],
+      categoria: 'barbacoas',
+      autor: '',
+      imagenUrl: '',
+      descripcion: ''
+    });
+    setShowSubirFotoModal(false);
+  };
+
+  const handleToggleLikeFoto = async (fotoId) => {
+    const yo = matchedMember?.nombre || usuarioActivo || 'Familiar';
+    const foto = fotosAlbum.find(f => f.id === fotoId);
+    if (!foto) return;
+    const currentLikes = Array.isArray(foto.likes) ? foto.likes : [];
+    const yaDioLike = currentLikes.includes(yo);
+    const updatedLikes = yaDioLike ? currentLikes.filter(nom => nom !== yo) : [...currentLikes, yo];
+
+    if (isCloudMode && user && !isLocalMode && typeof fotoId === 'string' && !fotoId.startsWith('foto_') && !fotoId.startsWith('f_')) {
+      try {
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'albumFotos', fotoId);
+        await updateDoc(docRef, { likes: updatedLikes });
+      } catch (err) {
+        console.error("Error actualizando like:", err);
+      }
+    }
+
+    const updated = fotosAlbum.map(f => f.id === fotoId ? { ...f, likes: updatedLikes } : f);
+    setFotosAlbum(updated);
+    persistLocal('albumFotos', updated);
+  };
+
+  const handleAñadirComentarioFoto = async (fotoId, texto) => {
+    if (!texto || !texto.trim()) return;
+    const yo = matchedMember?.nombre || usuarioActivo || 'Familiar';
+    const foto = fotosAlbum.find(f => f.id === fotoId);
+    if (!foto) return;
+
+    const nuevoComent = {
+      id: 'c_' + Date.now(),
+      autor: yo,
+      texto: texto.trim(),
+      fecha: new Date().toISOString()
+    };
+    const updatedComentarios = [...(foto.comentarios || []), nuevoComent];
+
+    if (isCloudMode && user && !isLocalMode && typeof fotoId === 'string' && !fotoId.startsWith('foto_') && !fotoId.startsWith('f_')) {
+      try {
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'albumFotos', fotoId);
+        await updateDoc(docRef, { comentarios: updatedComentarios });
+      } catch (err) {
+        console.error("Error guardando comentario:", err);
+      }
+    }
+
+    const updated = fotosAlbum.map(f => f.id === fotoId ? { ...f, comentarios: updatedComentarios } : f);
+    setFotosAlbum(updated);
+    persistLocal('albumFotos', updated);
+    setNuevoComentarioTexto(prev => ({ ...prev, [fotoId]: '' }));
+    triggerToast('💬 Comentario añadido');
+  };
+
+  const handleCompartirFotoTelegram = async (foto) => {
+    const yo = matchedMember?.nombre || usuarioActivo || 'Familiar';
+    const msgTg = `📸 <b>Foto en el Álbum Familiar de FamilyApp</b>\n\n` +
+      `🖼 <b>${foto.titulo}</b>\n` +
+      `📍 Lugar: ${foto.lugar || 'Familiar'}\n` +
+      `📅 Fecha: ${formatearFechaStr(foto.fecha)}\n` +
+      `👤 Subida por: ${foto.autor || yo}\n` +
+      (foto.descripcion ? `📝 <i>"${foto.descripcion}"</i>\n\n` : '\n') +
+      `👉 ¡Entra a FamilyApp para ver el álbum y dejar tus reacciones ❤️!`;
+
+    const replyMarkup = {
+      inline_keyboard: [
+        [
+          { text: "📸 Ver Álbum en FamilyApp", url: "https://familiabarnuevoapp.web.app/?tab=album" }
+        ]
+      ]
+    };
+    enviarMensajeTelegram(msgTg, replyMarkup);
+    triggerToast('✈️ Compartido en el grupo de Telegram');
+  };
+
+  const handleDeleteFoto = async (fotoId) => {
+    if (!confirm("¿Seguro que deseas eliminar esta foto del álbum familiar?")) return;
+    if (isCloudMode && user && !isLocalMode && typeof fotoId === 'string' && !fotoId.startsWith('foto_') && !fotoId.startsWith('f_')) {
+      try {
+        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'albumFotos', fotoId));
+        triggerToast('🗑 Foto eliminada de la nube');
+      } catch (err) {
+        console.error("Error eliminando foto:", err);
+      }
+    }
+    const updated = fotosAlbum.filter(f => f.id !== fotoId);
+    setFotosAlbum(updated);
+    persistLocal('albumFotos', updated);
+    if (fotoSeleccionadaLightbox?.id === fotoId) setFotoSeleccionadaLightbox(null);
   };
 
   const handleEnviarResumenManualTelegram = async () => {
@@ -3121,6 +3871,380 @@ export default function App() {
     }
   };
 
+  // --- ASISTENTE INTELIGENTE (PROCESAMIENTO DE LENGUAJE NATURAL Y VOZ) ---
+  const analizarTextoLenguajeNatural = (texto) => {
+    if (!texto || !texto.trim()) return null;
+    const t = texto.toLowerCase();
+    
+    // 1. Detectar Tipo
+    let tipo = 'cita';
+    if (t.includes('traslado') || t.includes('llevar') || t.includes('recoger') || t.includes('viaje') || t.includes('coche') || t.includes('alcala a madrid') || t.includes('madrid a alcala') || t.includes('a esgaravita') || t.includes('a alcalá') || t.includes('a madrid')) {
+      tipo = 'traslado';
+    } else if (t.includes('barbacoa') || t.includes('quedada') || t.includes('comida') || t.includes('cena') || t.includes('cumpleaños') || t.includes('fiesta') || t.includes('reunion') || t.includes('reunión')) {
+      tipo = 'evento';
+    }
+
+    // 2. Extraer Paciente
+    let paciente = 'Mamá (Encarnación)';
+    if (t.includes('papá') || t.includes('papa') || t.includes('jaime')) {
+      paciente = 'Papá (Jaime)';
+    } else if (t.includes('ambos') || t.includes('padres') || t.includes('los dos')) {
+      paciente = 'Ambos Padres (Jaime y Encarnación)';
+    }
+
+    // 3. Extraer Hora
+    let hora = '10:00';
+    const matchHora = t.match(/(?:a\s+las?|hora:?)\s*(\d{1,2})(?::(\d{2}))?/i) || t.match(/\b(\d{1,2}):(\d{2})\b/);
+    if (matchHora) {
+      const h = matchHora[1].padStart(2, '0');
+      const m = matchHora[2] || '00';
+      hora = `${h}:${m}`;
+    } else if (t.includes('por la mañana') || t.includes('mañana temprano')) {
+      hora = '10:00';
+    } else if (t.includes('mediodía') || t.includes('mediodia') || t.includes('a comer')) {
+      hora = '14:00';
+    } else if (t.includes('por la tarde')) {
+      hora = '18:00';
+    } else if (t.includes('por la noche')) {
+      hora = '21:00';
+    }
+
+    // 4. Extraer Fecha
+    let fecha = getFechaHoyLocal(new Date());
+    const hoy = new Date();
+    
+    if (t.includes('pasado mañana') || t.includes('pasado manana')) {
+      const d = new Date(hoy);
+      d.setDate(d.getDate() + 2);
+      fecha = getFechaHoyLocal(d);
+    } else if (t.includes('mañana') || t.includes('manana')) {
+      const d = new Date(hoy);
+      d.setDate(d.getDate() + 1);
+      fecha = getFechaHoyLocal(d);
+    } else if (t.includes('hoy')) {
+      fecha = getFechaHoyLocal(hoy);
+    } else {
+      const diasSemana = ['domingo', 'lunes', 'martes', 'miércoles', 'miercoles', 'jueves', 'viernes', 'sábado', 'sabado'];
+      let diaEncontrado = -1;
+      for (let i = 0; i < diasSemana.length; i++) {
+        if (t.includes(diasSemana[i])) {
+          diaEncontrado = i === 4 ? 3 : (i === 8 ? 6 : i);
+          break;
+        }
+      }
+      if (diaEncontrado !== -1) {
+        const hoyDia = hoy.getDay();
+        let diff = diaEncontrado - hoyDia;
+        if (diff <= 0) diff += 7;
+        const d = new Date(hoy);
+        d.setDate(d.getDate() + diff);
+        fecha = getFechaHoyLocal(d);
+      } else {
+        const mesesEsp = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+        const matchFechaMes = t.match(/(\d{1,2})\s+de\s+([a-záéíóú]+)/i);
+        if (matchFechaMes) {
+          const diaNum = parseInt(matchFechaMes[1], 10);
+          const mesNombre = matchFechaMes[2].toLowerCase();
+          const mesIdx = mesesEsp.findIndex(m => mesNombre.startsWith(m.slice(0, 4)));
+          if (mesIdx !== -1) {
+            const ano = hoy.getFullYear();
+            const d = new Date(ano, mesIdx, diaNum);
+            if (d < hoy) d.setFullYear(ano + 1);
+            fecha = getFechaHoyLocal(d);
+          }
+        } else {
+          const matchIso = t.match(/\b(202\d-\d{2}-\d{2})\b/);
+          const matchSlash = t.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
+          if (matchIso) {
+            fecha = matchIso[1];
+          } else if (matchSlash) {
+            const diaNum = matchSlash[1].padStart(2, '0');
+            const mesNum = matchSlash[2].padStart(2, '0');
+            const anoNum = matchSlash[3] ? (matchSlash[3].length === 2 ? `20${matchSlash[3]}` : matchSlash[3]) : hoy.getFullYear();
+            fecha = `${anoNum}-${mesNum}-${diaNum}`;
+          }
+        }
+      }
+    }
+
+    // 5. Detalles según Tipo
+    if (tipo === 'cita') {
+      let centro = 'Fundación Jiménez Díaz';
+      if (t.includes('juan de austria') || t.includes('ambulatorio') || t.includes('alcalá') || t.includes('alcala')) {
+        centro = 'Ambulatorio Juan de Austria';
+      } else if (t.includes('fjd') || t.includes('jiménez díaz') || t.includes('jimenez diaz') || t.includes('madrid')) {
+        centro = 'Fundación Jiménez Díaz';
+      }
+
+      let especialidad = 'Consulta Médica';
+      const especialidades = [
+        'cardiología', 'cardiologia', 'traumatología', 'traumatologia', 'oftalmología', 'oftalmologia',
+        'dermatología', 'dermatologia', 'análisis', 'analitica', 'analítica', 'reumatología', 'reumatologia',
+        'neurología', 'neurologia', 'urología', 'urologia', 'otorrino', 'otorrinolaringología', 'digestivo',
+        'médico de cabecera', 'cabecera', 'sintrom', 'fisioterapia', 'rehabilitación', 'rehabilitacion'
+      ];
+      for (const esp of especialidades) {
+        if (t.includes(esp)) {
+          especialidad = esp.charAt(0).toUpperCase() + esp.slice(1);
+          break;
+        }
+      }
+
+      let medico = '';
+      const matchDoc = t.match(/(?:con\s+el\s+dr\.?|doctor|doctora|dra\.?)\s+([a-záéíóú]+(?:\s+[a-záéíóú]+)?)/i);
+      if (matchDoc) {
+        medico = 'Dr. ' + matchDoc[1].charAt(0).toUpperCase() + matchDoc[1].slice(1);
+      }
+
+      return {
+        tipo: 'cita',
+        paciente,
+        especialidad,
+        medico,
+        centro,
+        fecha,
+        hora,
+        notas: texto
+      };
+    }
+
+    if (tipo === 'traslado') {
+      let origen = 'Alcalá (Esgaravita)';
+      let destino = 'Madrid';
+      if (t.includes('madrid a alcalá') || t.includes('madrid a alcala') || t.includes('madrid a la finca') || t.includes('de madrid a')) {
+        origen = 'Madrid';
+        destino = 'Alcalá (Esgaravita)';
+      }
+
+      const horaNum = parseInt(hora.split(':')[0], 10);
+      return {
+        tipo: 'traslado',
+        origen,
+        destino,
+        fecha,
+        hora,
+        momentoDia: horaNum < 14 ? 'Mañana' : (horaNum < 17 ? 'Mediodía' : 'Tarde'),
+        conductor: usuarioActivo || 'Pendiente de asignar',
+        notas: texto
+      };
+    }
+
+    let titulo = 'Quedada Familiar';
+    if (t.includes('barbacoa')) titulo = 'Barbacoa Familiar';
+    else if (t.includes('comida')) titulo = 'Comida Familiar';
+    else if (t.includes('cena')) titulo = 'Cena Familiar';
+
+    let lugar = 'Finca Esgaravita';
+    if (t.includes('munibáñez') || t.includes('munibañez')) lugar = 'Munibáñez';
+    else if (t.includes('ribera')) lugar = 'La Ribera';
+
+    return {
+      tipo: 'evento',
+      titulo,
+      fecha,
+      hora: hora || '14:00',
+      lugar,
+      descripcion: texto
+    };
+  };
+
+  const iniciarReconocimientoVoz = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Tu navegador no soporta dictado por voz directamente. Puedes escribir el texto en el campo.');
+      return;
+    }
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'es-ES';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setAsistenteEscuchando(true);
+      };
+
+      recognition.onresult = (event) => {
+        const speechResult = event.results[0][0].transcript;
+        setTextoAsistente(speechResult);
+        const parsed = analizarTextoLenguajeNatural(speechResult);
+        setAnalisisAsistente(parsed);
+        setAsistenteEscuchando(false);
+      };
+
+      recognition.onerror = (event) => {
+        console.error('Error de voz:', event.error);
+        setAsistenteEscuchando(false);
+      };
+
+      recognition.onend = () => {
+        setAsistenteEscuchando(false);
+      };
+
+      recognition.start();
+    } catch (err) {
+      console.error(err);
+      setAsistenteEscuchando(false);
+    }
+  };
+
+  const handleConfirmarAsistente = async () => {
+    if (!analisisAsistente) return;
+    
+    if (analisisAsistente.tipo === 'cita') {
+      const citaObj = {
+        paciente: analisisAsistente.paciente || 'Mamá (Encarnación)',
+        especialidad: analisisAsistente.especialidad || 'Consulta Médica',
+        medico: analisisAsistente.medico || '',
+        centro: analisisAsistente.centro || 'Fundación Jiménez Díaz',
+        ciudad: detectarCiudadCita({ centro: analisisAsistente.centro }),
+        ubicacionUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(analisisAsistente.centro || 'Hospital')}`,
+        fecha: analisisAsistente.fecha,
+        hora: analisisAsistente.hora || '10:00',
+        acompanante: 'Pendiente de asignar',
+        quienLleva: 'Pendiente de asignar',
+        quienRecoge: 'Pendiente de asignar',
+        mismoConductorVuelta: true,
+        notas: analisisAsistente.notas || '',
+        estado: 'pendiente'
+      };
+
+      if (isCloudMode && user && !isLocalMode) {
+        try {
+          const col = collection(db, 'artifacts', appId, 'public', 'data', 'citasMedicas');
+          await addDoc(col, { ...citaObj, creadoPor: usuarioActivo, creadoEl: new Date().toISOString() });
+          
+          const replyMarkup = {
+            inline_keyboard: [
+              [
+                { text: "🚗 Acompañar a la cita", url: "https://familiabarnuevoapp.web.app/?tab=citas" },
+                { text: "📱 Abrir en FamilyApp", url: "https://familiabarnuevoapp.web.app/?tab=citas" }
+              ]
+            ]
+          };
+          enviarMensajeTelegram(
+            `🏥 <b>Nueva Cita Médica programada con el Asistente</b>\n\n` +
+            `👤 <b>Paciente:</b> ${citaObj.paciente}\n` +
+            `🩺 <b>Especialidad:</b> ${citaObj.especialidad}\n` +
+            (citaObj.medico ? `👨‍⚕️ <b>Doctor/a:</b> ${citaObj.medico}\n` : '') +
+            `🏥 <b>Centro:</b> ${citaObj.centro}\n` +
+            `📅 <b>Fecha:</b> ${formatearFechaStr(citaObj.fecha)} a las ${citaObj.hora}\n` +
+            `🚗 <b>Acompañante:</b> ⚠️ <b>¡Pendiente de asignar!</b>\n` +
+            `\n👉 <a href="https://familiabarnuevoapp.web.app/?tab=citas">Abrir App para coordinar</a>`,
+            replyMarkup
+          );
+          triggerToast('✨ ¡Cita médica creada con éxito desde el asistente!');
+        } catch (e) {
+          console.error(e);
+        }
+      } else {
+        const updated = [...citasMedicas, { id: 'cit_' + Date.now(), ...citaObj, creadoEl: new Date().toISOString() }];
+        setCitasMedicas(updated);
+        persistLocal('citasMedicas', updated);
+        triggerToast('✨ ¡Cita médica creada localmente!');
+      }
+      setShowAsistenteModal(false);
+      setActiveTab('citas');
+      return;
+    }
+
+    if (analisisAsistente.tipo === 'traslado') {
+      const trasObj = {
+        origen: analisisAsistente.origen,
+        destino: analisisAsistente.destino,
+        fecha: analisisAsistente.fecha,
+        hora: analisisAsistente.hora,
+        momentoDia: analisisAsistente.momentoDia,
+        conductor: analisisAsistente.conductor || 'Pendiente de asignar',
+        notas: analisisAsistente.notas || '',
+        estado: 'pendiente',
+        opciones: []
+      };
+
+      if (isCloudMode && user && !isLocalMode) {
+        try {
+          const col = collection(db, 'artifacts', appId, 'public', 'data', 'trasladosPadres');
+          await addDoc(col, { ...trasObj, creadoPor: usuarioActivo, creadoEl: new Date().toISOString() });
+          
+          const replyMarkup = {
+            inline_keyboard: [
+              [
+                { text: "🙋‍♂️ Me ofrezco como conductor", url: "https://familiabarnuevoapp.web.app/?tab=traslados" },
+                { text: "🚗 Ver Traslados", url: "https://familiabarnuevoapp.web.app/?tab=traslados" }
+              ]
+            ]
+          };
+          enviarMensajeTelegram(
+            `🚗 <b>Nuevo Traslado programado con el Asistente</b>\n\n` +
+            `📍 <b>Ruta:</b> ${trasObj.origen} ➔ ${trasObj.destino}\n` +
+            `📅 <b>Fecha:</b> ${formatearFechaStr(trasObj.fecha)} (${trasObj.hora})\n` +
+            `👤 <b>Conductor:</b> ${trasObj.conductor}\n` +
+            `\n👉 <a href="https://familiabarnuevoapp.web.app/?tab=traslados">Abrir App para coordinar</a>`,
+            replyMarkup
+          );
+          triggerToast('✨ ¡Traslado creado con éxito desde el asistente!');
+        } catch (e) {
+          console.error(e);
+        }
+      } else {
+        const updated = [...trasladosPadres, { id: 'tras_' + Date.now(), ...trasObj, creadoEl: new Date().toISOString() }];
+        setTrasladosPadres(updated);
+        persistLocal('trasladosPadres', updated);
+        triggerToast('✨ ¡Traslado creado localmente!');
+      }
+      setShowAsistenteModal(false);
+      setActiveTab('traslados');
+      return;
+    }
+
+    if (analisisAsistente.tipo === 'evento') {
+      const evtObj = {
+        titulo: analisisAsistente.titulo,
+        fecha: analisisAsistente.fecha,
+        fechaFin: analisisAsistente.fecha,
+        hora: analisisAsistente.hora,
+        lugar: analisisAsistente.lugar,
+        ubicacionUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(analisisAsistente.lugar)}`,
+        descripcion: analisisAsistente.descripcion || '',
+        asistentes: [usuarioActivo]
+      };
+
+      if (isCloudMode && user && !isLocalMode) {
+        try {
+          const col = collection(db, 'artifacts', appId, 'public', 'data', 'eventos');
+          await addDoc(col, { ...evtObj, creadoPor: usuarioActivo, creadoEl: new Date().toISOString() });
+          
+          const replyMarkup = {
+            inline_keyboard: [
+              [
+                { text: "🍖 Ver Quedada / Asistir", url: "https://familiabarnuevoapp.web.app/?tab=eventos" }
+              ]
+            ]
+          };
+          enviarMensajeTelegram(
+            `🍖 <b>Nueva Quedada Familiar programada</b>\n\n` +
+            `🎉 <b>${evtObj.titulo}</b>\n` +
+            `📅 <b>Fecha:</b> ${formatearFechaStr(evtObj.fecha)} a las ${evtObj.hora}\n` +
+            `📍 <b>Lugar:</b> ${evtObj.lugar}\n` +
+            `\n👉 <a href="https://familiabarnuevoapp.web.app/?tab=eventos">Abrir App para apuntarte</a>`,
+            replyMarkup
+          );
+          triggerToast('✨ ¡Quedada / evento creado con éxito!');
+        } catch (e) {
+          console.error(e);
+        }
+      } else {
+        const updated = [...eventos, { id: 'e_' + Date.now(), ...evtObj, creadoEl: new Date().toISOString() }];
+        setEventos(updated);
+        persistLocal('eventos', updated);
+        triggerToast('✨ ¡Quedada creada localmente!');
+      }
+      setShowAsistenteModal(false);
+      setActiveTab('eventos');
+      return;
+    }
+  };
+
   const resetCitaForm = () => {
     setNewCita({
       paciente: 'Mamá (Encarnación)',
@@ -3230,7 +4354,16 @@ export default function App() {
             `${textoAcompanamiento}\n` +
             (citaData.notas ? `📋 <b>Notas:</b> <i>${citaData.notas}</i>\n` : '') +
             `\n👉 <a href="https://familiabarnuevoapp.web.app">Abrir App para coordinar o ver detalles</a>`;
-          enviarMensajeTelegram(msgTg);
+          
+          const replyMarkup = {
+            inline_keyboard: [
+              [
+                { text: "🚗 Acompañar a la cita", url: "https://familiabarnuevoapp.web.app/?tab=citas" },
+                { text: "📱 Abrir en FamilyApp", url: "https://familiabarnuevoapp.web.app/?tab=citas" }
+              ]
+            ]
+          };
+          enviarMensajeTelegram(msgTg, replyMarkup);
         }
 
         resetCitaForm();
@@ -3662,10 +4795,18 @@ export default function App() {
       if (c.notas) msg += `  📋 <i>${c.notas}</i>\n`;
       msg += `\n`;
     });
-    msg += `👉 <a href="https://familiabarnuevoapp.web.app">Abrir App para ver todas o asignarse</a>`;
+    msg += `👉 <a href="https://familiabarnuevoapp.web.app/?tab=citas">Abrir App para ver todas o asignarse</a>`;
+
+    const replyMarkup = {
+      inline_keyboard: [
+        [
+          { text: "🏥 Ver Próximas Citas Médicas", url: "https://familiabarnuevoapp.web.app/?tab=citas" }
+        ]
+      ]
+    };
 
     triggerToast('Enviando citas médicas a Telegram (Laos)...');
-    const ok = await enviarMensajeTelegram(msg);
+    const ok = await enviarMensajeTelegram(msg, replyMarkup);
     if (ok) {
       triggerToast('✈️ ¡Resumen de citas médicas enviado a Telegram!');
     } else {
@@ -3760,7 +4901,16 @@ export default function App() {
             `${textoOpciones}\n` +
             (trasladoData.notas ? `📋 <b>Notas:</b> <i>${trasladoData.notas}</i>\n` : '') +
             `\n👉 <a href="https://familiabarnuevoapp.web.app">Abrir App para elegir preferencia o ver detalles</a>`;
-          enviarMensajeTelegram(msgTg);
+          
+          const replyMarkup = {
+            inline_keyboard: [
+              [
+                { text: "🙋‍♂️ Me ofrezco como conductor", url: "https://familiabarnuevoapp.web.app/?tab=traslados" },
+                { text: "🚗 Ver Traslados", url: "https://familiabarnuevoapp.web.app/?tab=traslados" }
+              ]
+            ]
+          };
+          enviarMensajeTelegram(msgTg, replyMarkup);
         }
 
         if (pollOnTraslado && opcionesFinales.length >= 2) {
@@ -4111,10 +5261,18 @@ export default function App() {
       if (t.notas) msg += `  📋 <i>${t.notas}</i>\n`;
       msg += `\n`;
     });
-    msg += `👉 <a href="https://familiabarnuevoapp.web.app">Abrir App Familiar para ver o coordinar</a>`;
+    msg += `👉 <a href="https://familiabarnuevoapp.web.app/?tab=traslados">Abrir App Familiar para ver o coordinar</a>`;
+
+    const replyMarkup = {
+      inline_keyboard: [
+        [
+          { text: "🚗 Ver Traslados de los Padres", url: "https://familiabarnuevoapp.web.app/?tab=traslados" }
+        ]
+      ]
+    };
 
     triggerToast('Enviando traslados a Telegram (Laos)...');
-    const ok = await enviarMensajeTelegram(msg);
+    const ok = await enviarMensajeTelegram(msg, replyMarkup);
     if (ok) {
       triggerToast('✈️ ¡Resumen de traslados enviado a Telegram!');
     } else {
@@ -5511,6 +6669,18 @@ export default function App() {
               </div>
               
               <div className="flex items-center gap-2">
+                {/* BOTÓN INSTALAR PWA */}
+                {!isInstalledPWA && (
+                  <button
+                    onClick={handleInstalarApp}
+                    className="bg-amber-400 hover:bg-amber-300 text-slate-900 text-xs font-black py-2 px-3 rounded-xl flex items-center gap-1.5 transition-all shadow-md animate-pulse shrink-0"
+                    title="Instalar FamilyApp como aplicación en tu móvil o tablet"
+                  >
+                    <span>📲</span>
+                    <span>Instalar App</span>
+                  </button>
+                )}
+
                 {/* BOTÓN DESCARGAR REPORTE PDF */}
                 <button
                   onClick={() => setShowPrintModal(true)}
@@ -5620,10 +6790,11 @@ export default function App() {
                 { id: 'inicio', label: 'Inicio', icon: Home },
                 { id: 'traslados', label: 'Padres (Alcalá/Madrid)', icon: Car },
                 { id: 'citas', label: 'Salud y Cuidados', icon: Activity },
+                { id: 'album', label: 'Álbum Recuerdos 📸', icon: Image },
                 { id: 'arbol', label: 'Árbol Genealógico', icon: Users },
                 { id: 'calendario', label: 'Calendario Visual', icon: CalendarIcon },
                 { id: 'vacaciones', label: 'Vacaciones Verano', icon: Sun },
-                { id: 'eventos', label: 'Barbacoas y Quedadas', icon: CalendarIcon },
+                { id: 'eventos', label: 'Barbacoas y Botes 💰', icon: Wallet },
                 { id: 'cumples', label: 'Cumples y Santos', icon: Gift },
                 { id: 'ideas', label: 'Buzón de Ideas', icon: MessageSquare }
               ].map(tab => {
@@ -5678,6 +6849,9 @@ export default function App() {
                         </button>
                         <button onClick={handleEnviarResumenManualTelegram} className="bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition shadow-md flex items-center gap-1.5" title="Enviar recordatorio al grupo de Telegram (Laos)">
                           <span>✈️</span> Avisar en Telegram
+                        </button>
+                        <button onClick={() => { setTextoAsistente(''); setAnalisisAsistente(null); setShowAsistenteModal(true); }} className="bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-bold text-xs px-4.5 py-2.5 rounded-xl transition shadow-md flex items-center gap-1.5" title="Añade citas, traslados o barbacoas escribiendo o hablando de forma natural">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-300" /> Asistente Rápido ✨
                         </button>
                         <button onClick={() => setShowPrintModal(true)} className="bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-4.5 py-2.5 rounded-xl transition shadow-md flex items-center gap-1.5">
                           <Download className="w-3.5 h-3.5 text-emerald-400" /> Descargar PDF
@@ -5858,6 +7032,50 @@ export default function App() {
                             Ver todas <ChevronRight className="w-3.5 h-3.5" />
                           </button>
                         </div>
+                      </div>
+                    </div>
+
+                    {/* Accesos Rápidos: Botes & Álbum de Recuerdos (Fases 3 y 5) */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div
+                        onClick={() => {
+                          setActiveTab('eventos');
+                          setSubTabEventos('botes');
+                        }}
+                        className="bg-gradient-to-r from-emerald-50 via-teal-50 to-white p-5 rounded-3xl border border-emerald-200 shadow-xs hover:shadow-md transition cursor-pointer flex items-center justify-between group"
+                      >
+                        <div className="flex items-center gap-3.5">
+                          <div className="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center text-2xl group-hover:scale-105 transition shrink-0">
+                            💰
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-full">
+                              Cuentas Claras
+                            </span>
+                            <h4 className="font-bold text-slate-900 text-sm mt-0.5">Botes y Gastos de Barbacoas</h4>
+                            <p className="text-xs text-slate-500">Reparto equitativo con cálculo de Bizum directo.</p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-emerald-600 group-hover:translate-x-1 transition shrink-0" />
+                      </div>
+
+                      <div
+                        onClick={() => setActiveTab('album')}
+                        className="bg-gradient-to-r from-purple-50 via-pink-50 to-white p-5 rounded-3xl border border-purple-200 shadow-xs hover:shadow-md transition cursor-pointer flex items-center justify-between group"
+                      >
+                        <div className="flex items-center gap-3.5">
+                          <div className="w-12 h-12 bg-purple-100 text-purple-700 rounded-2xl flex items-center justify-center text-2xl group-hover:scale-105 transition shrink-0">
+                            📸
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-black uppercase tracking-wider text-purple-800 bg-purple-100/70 px-2 py-0.5 rounded-full">
+                              Recuerdos Familiares
+                            </span>
+                            <h4 className="font-bold text-slate-900 text-sm mt-0.5">Álbum Colaborativo</h4>
+                            <p className="text-xs text-slate-500">Galería de fotos, vacaciones, reacciones y comentarios.</p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-purple-600 group-hover:translate-x-1 transition shrink-0" />
                       </div>
                     </div>
 
@@ -6606,92 +7824,478 @@ export default function App() {
                   </div>
                 )}
 
-                {/* ================= PÁGINA: EVENTOS ================= */}
+                {/* ================= PÁGINA: EVENTOS & BOTES ================= */}
                 {activeTab === 'eventos' && (
                   <div className="space-y-6 animate-fadeIn">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-3xl border border-slate-150 shadow-sm">
-                      <div>
-                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                          <CalendarIcon className="w-6 h-6 text-indigo-600" /> Barbacoas y Quedadas Fines de Semana
-                        </h2>
-                      </div>
-                      <button onClick={() => setShowEventModal(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-md shrink-0">
-                        <Plus className="w-4 h-4" /> Proponer Plan Familiar
+                    {/* Selector de Sub-pestañas: Barbacoas vs Cuentas Claras */}
+                    <div className="flex bg-slate-100/90 p-1.5 rounded-2xl gap-1 max-w-md border border-slate-200">
+                      <button
+                        onClick={() => setSubTabEventos('quedadas')}
+                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                          subTabEventos === 'quedadas'
+                            ? 'bg-white text-indigo-700 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <span>🍖</span> Quedadas & Barbacoas
+                      </button>
+                      <button
+                        onClick={() => setSubTabEventos('botes')}
+                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                          subTabEventos === 'botes'
+                            ? 'bg-white text-emerald-700 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <Wallet className="w-3.5 h-3.5 text-emerald-600" /> Botes & Cuentas Claras
                       </button>
                     </div>
 
-                    <div className="space-y-4">
-                      {eventos.map(evt => (
-                        <div key={evt.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                            <div className="space-y-2 flex-1 relative pr-12">
-                              {/* Botones de acción rápidos */}
-                              <div className="absolute top-0 right-0 flex gap-1">
+                    {/* SUB-PESTAÑA 1: QUEDADAS Y BARBACOAS */}
+                    {subTabEventos === 'quedadas' && (
+                      <div className="space-y-6">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-3xl border border-slate-150 shadow-sm">
+                          <div>
+                            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                              <CalendarIcon className="w-6 h-6 text-indigo-600" /> Barbacoas y Quedadas Fines de Semana
+                            </h2>
+                            <p className="text-xs text-slate-500 mt-1">
+                              Coordina comidas familiares, confirmaciones de asistencia y planes comunes.
+                            </p>
+                          </div>
+                          <button onClick={() => setShowEventModal(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-md shrink-0 flex items-center gap-1.5">
+                            <Plus className="w-4 h-4" /> Proponer Plan Familiar
+                          </button>
+                        </div>
+
+                        <div className="space-y-4">
+                          {eventos.map(evt => (
+                            <div key={evt.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div className="space-y-2 flex-1 relative pr-12">
+                                  {/* Botones de acción rápidos */}
+                                  <div className="absolute top-0 right-0 flex gap-1">
+                                    <button
+                                      onClick={() => startEditEvent(evt)}
+                                      className="text-slate-400 hover:text-indigo-600 p-1.5 hover:bg-slate-100 rounded-lg transition"
+                                      title="Editar plan"
+                                    >
+                                      <Edit2 className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteElement('eventos', evt.id)}
+                                      className="text-slate-350 hover:text-rose-500 p-1.5 hover:bg-slate-100 rounded-lg transition"
+                                      title="Eliminar plan"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+
+                                  <h3 className="text-xl font-bold text-slate-800 pr-12">{evt.titulo}</h3>
+                                  <p className="text-xs text-slate-500 flex items-center gap-2 flex-wrap">
+                                    <span>
+                                      📅 {evt.fechaFin && evt.fechaFin !== evt.fecha 
+                                        ? `Del ${formatearFechaStr(evt.fecha)} al ${formatearFechaStr(evt.fechaFin)}`
+                                        : `${formatearFechaStr(evt.fecha)} - ${evt.hora || 'Por concretar'}`
+                                      }
+                                    </span>
+                                    {evt.fechaFin && evt.fechaFin !== evt.fecha && (
+                                      <span className="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-200">
+                                        🎉 Varios días / Fin de semana
+                                      </span>
+                                    )}
+                                    <span>| 📍 Lugar: {evt.lugar}</span>
+                                  </p>
+                                  {evt.descripcion && <p className="text-xs text-slate-650 bg-slate-50 p-2 rounded-lg">{evt.descripcion}</p>}
+                                  <div className="pt-1">
+                                    <a
+                                      href={getGoogleCalendarUrlForEvent(evt)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1.5 text-[11px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:text-indigo-800 px-3 py-1.5 rounded-xl border border-indigo-200 transition shadow-3xs"
+                                      title="Abrir y guardar en Google Calendar"
+                                    >
+                                      <span>📅</span> Añadir a Google Calendar
+                                    </a>
+                                  </div>
+                                </div>
+                                <div className="md:w-72 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                  <p className="text-xs font-bold text-slate-600 mb-2">Confirmados:</p>
+                                  <div className="flex flex-wrap gap-1">
+                                    {integrantes.map(int => {
+                                      const asiste = evt.asistentes?.includes(int.nombre);
+                                      return (
+                                        <button
+                                          key={int.id}
+                                          onClick={() => alternarFamiliarEnEvento(evt.id, evt.asistentes || [], int.nombre)}
+                                          className={`text-[9px] px-2 py-0.5 rounded ${asiste ? 'bg-emerald-600 text-white font-bold' : 'bg-white border text-slate-600'}`}
+                                        >
+                                          {int.nombre}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* SUB-PESTAÑA 2: BOTES & CUENTAS CLARAS */}
+                    {subTabEventos === 'botes' && (() => {
+                      const activeBote = botesGastos.find(b => b.id === selectedBoteId) || botesGastos[0];
+                      const balance = activeBote ? calcularBalanceBote(activeBote) : null;
+
+                      return (
+                        <div className="space-y-6">
+                          {/* Cabecera Cuentas Claras */}
+                          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-white p-6 rounded-3xl border border-emerald-150 shadow-sm">
+                            <div>
+                              <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100/70 px-2.5 py-0.5 rounded-full mb-1">
+                                <Wallet className="w-3.5 h-3.5" /> Fase 3: Gastos Compartidos
+                              </div>
+                              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                                💰 Cuentas Claras & Botes Familiares
+                              </h2>
+                              <p className="text-xs text-slate-600 mt-1">
+                                Reparto equitativo de compras, carne de barbacoa y regalos. ¡Liquidación directa por Bizum sin líos de números!
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setNewBote({
+                                  titulo: '',
+                                  descripcion: '',
+                                  fecha: new Date().toISOString().split('T')[0],
+                                  participantes: HERMANOS_NOMBRES.slice(),
+                                  cerrado: false
+                                });
+                                setShowBoteModal(true);
+                              }}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-md shrink-0 flex items-center gap-1.5 transition"
+                            >
+                              <Plus className="w-4 h-4" /> Crear Nuevo Bote
+                            </button>
+                          </div>
+
+                          {/* Carrusel / Selector de Botes */}
+                          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
+                            {botesGastos.map(b => {
+                              const isSelected = activeBote && activeBote.id === b.id;
+                              const bal = calcularBalanceBote(b);
+                              return (
                                 <button
-                                  onClick={() => startEditEvent(evt)}
-                                  className="text-slate-400 hover:text-indigo-600 p-1.5 hover:bg-slate-100 rounded-lg transition"
-                                  title="Editar plan"
+                                  key={b.id}
+                                  onClick={() => setSelectedBoteId(b.id)}
+                                  className={`px-4 py-3 rounded-2xl border text-left transition shrink-0 min-w-[200px] ${
+                                    isSelected
+                                      ? 'bg-emerald-600 text-white border-emerald-700 shadow-md ring-2 ring-emerald-300'
+                                      : 'bg-white text-slate-700 border-slate-200 hover:border-emerald-300'
+                                  }`}
                                 >
-                                  <Edit2 className="w-4 h-4" />
+                                  <div className="flex items-center justify-between gap-2 mb-1">
+                                    <span className="font-bold text-xs truncate">{b.titulo}</span>
+                                    {b.cerrado ? (
+                                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${isSelected ? 'bg-emerald-800 text-emerald-100' : 'bg-slate-150 text-slate-600'}`}>
+                                        🔒 Cerrado
+                                      </span>
+                                    ) : (
+                                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${isSelected ? 'bg-emerald-500 text-white' : 'bg-emerald-100 text-emerald-800'}`}>
+                                        🟢 Activo
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className={`text-[10px] ${isSelected ? 'text-emerald-100' : 'text-slate-400'}`}>
+                                    📅 {formatearFechaStr(b.fecha)}
+                                  </div>
+                                  <div className="mt-2 flex items-baseline justify-between">
+                                    <span className={`text-base font-black ${isSelected ? 'text-white' : 'text-slate-900'}`}>
+                                      {bal.total.toFixed(2)} €
+                                    </span>
+                                    <span className={`text-[10px] ${isSelected ? 'text-emerald-100' : 'text-slate-500'}`}>
+                                      {b.gastos?.length || 0} ticket(s)
+                                    </span>
+                                  </div>
                                 </button>
-                                <button
-                                  onClick={() => handleDeleteElement('eventos', evt.id)}
-                                  className="text-slate-350 hover:text-rose-500 p-1.5 hover:bg-slate-100 rounded-lg transition"
-                                  title="Eliminar plan"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {/* Detalle del Bote Activo */}
+                          {activeBote ? (
+                            <div className="space-y-6">
+                              {/* Barra superior de métricas del Bote */}
+                              <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs space-y-4">
+                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <h3 className="text-xl font-bold text-slate-900">{activeBote.titulo}</h3>
+                                      {activeBote.cerrado ? (
+                                        <span className="bg-slate-100 text-slate-700 text-xs px-2.5 py-0.5 rounded-full font-bold border border-slate-200">
+                                          🔒 Bote Cerrado
+                                        </span>
+                                      ) : (
+                                        <span className="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-0.5 rounded-full font-bold border border-emerald-200">
+                                          🟢 Liquidación Abierta
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-slate-500 mt-0.5">
+                                      {activeBote.descripcion || 'Sin descripción adicional'} • Fecha: {formatearFechaStr(activeBote.fecha)}
+                                    </p>
+                                  </div>
+
+                                  <div className="flex flex-wrap gap-2 items-center">
+                                    <button
+                                      onClick={() => {
+                                        setNewGasto({
+                                          concepto: '',
+                                          importe: '',
+                                          pagadoPor: activeBote.participantes?.[0] || 'Isaac',
+                                          divididoEntre: activeBote.participantes ? [...activeBote.participantes] : HERMANOS_NOMBRES.slice(),
+                                          fecha: new Date().toISOString().split('T')[0]
+                                        });
+                                        setShowGastoModal(true);
+                                      }}
+                                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-3.5 rounded-xl shadow-xs flex items-center gap-1.5 transition"
+                                    >
+                                      <Receipt className="w-3.5 h-3.5" /> + Añadir Ticket / Gasto
+                                    </button>
+                                    <button
+                                      onClick={() => handleEnviarCuentasTelegram(activeBote)}
+                                      className="bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs py-2 px-3.5 rounded-xl shadow-xs flex items-center gap-1.5 transition"
+                                      title="Enviar liquidación de cuentas al grupo de Telegram"
+                                    >
+                                      <span>✈️</span> Enviar a Telegram
+                                    </button>
+                                    <button
+                                      onClick={() => handleToggleCerrarBote(activeBote.id, activeBote.cerrado)}
+                                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-2 px-3 rounded-xl border border-slate-200 flex items-center gap-1 transition"
+                                      title={activeBote.cerrado ? 'Reabrir para añadir más gastos' : 'Cerrar bote'}
+                                    >
+                                      {activeBote.cerrado ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                                      {activeBote.cerrado ? 'Reabrir' : 'Cerrar'}
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteBote(activeBote.id)}
+                                      className="text-slate-350 hover:text-rose-600 p-2 rounded-xl hover:bg-rose-50 transition"
+                                      title="Eliminar Bote"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* KPIs Rápidos */}
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-150">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Gasto Total Acumulado</span>
+                                    <span className="text-xl font-black text-slate-900">{balance.total.toFixed(2)} €</span>
+                                  </div>
+                                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-150">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Media por Participante</span>
+                                    <span className="text-xl font-black text-emerald-700">
+                                      {(balance.total / (activeBote.participantes?.length || 1)).toFixed(2)} €
+                                    </span>
+                                  </div>
+                                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-150">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Participantes</span>
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {activeBote.participantes?.map((p, idx) => (
+                                        <span key={idx} className="bg-white border border-slate-200 text-slate-700 font-bold text-[9px] px-1.5 py-0.5 rounded-md">
+                                          {p.split(' ')[0]}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
                               </div>
 
-                              <h3 className="text-xl font-bold text-slate-800 pr-12">{evt.titulo}</h3>
-                              <p className="text-xs text-slate-500 flex items-center gap-2 flex-wrap">
-                                <span>
-                                  📅 {evt.fechaFin && evt.fechaFin !== evt.fecha 
-                                    ? `Del ${formatearFechaStr(evt.fecha)} al ${formatearFechaStr(evt.fechaFin)}`
-                                    : `${formatearFechaStr(evt.fecha)} - ${evt.hora || 'Por concretar'}`
-                                  }
-                                </span>
-                                {evt.fechaFin && evt.fechaFin !== evt.fecha && (
-                                  <span className="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-200">
-                                    🎉 Varios días / Fin de semana
-                                  </span>
-                                )}
-                                <span>| 📍 Lugar: {evt.lugar}</span>
+                              {/* Rejilla de 2 columnas: Balances/Bizum a la izquierda, Tickets a la derecha */}
+                              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                                {/* Columna Izquierda: Balances y Liquidación Óptima (7 cols) */}
+                                <div className="lg:col-span-7 space-y-6">
+                                  {/* Desglose por Persona */}
+                                  <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs">
+                                    <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2 mb-3">
+                                      <span>👥</span> Balance Individual
+                                    </h4>
+                                    <div className="space-y-2">
+                                      {activeBote.participantes?.map(persona => {
+                                        const pBalance = balance.balances[persona] || { pagado: 0, debido: 0, saldo: 0 };
+                                        const saldo = pBalance.saldo;
+                                        const isPositive = saldo > 0.01;
+                                        const isNegative = saldo < -0.01;
+
+                                        return (
+                                          <div key={persona} className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-150">
+                                            <div className="flex items-center gap-2.5">
+                                              <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-800 font-black text-xs flex items-center justify-center">
+                                                {persona[0]}
+                                              </div>
+                                              <div>
+                                                <div className="text-xs font-bold text-slate-800">{persona}</div>
+                                                <div className="text-[10px] text-slate-400">
+                                                  Pagó {pBalance.pagado.toFixed(2)}€ • Corresponde {pBalance.debido.toFixed(2)}€
+                                                </div>
+                                              </div>
+                                            </div>
+                                            <div className="text-right">
+                                              <div className={`text-xs font-black ${
+                                                isPositive ? 'text-emerald-600' : isNegative ? 'text-rose-600' : 'text-slate-500'
+                                              }`}>
+                                                {isPositive ? `+${saldo.toFixed(2)} €` : isNegative ? `${saldo.toFixed(2)} €` : '0.00 €'}
+                                              </div>
+                                              <div className="text-[9px] font-bold text-slate-400">
+                                                {isPositive ? 'Le deben' : isNegative ? 'Debe pagar' : 'En paz'}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+
+                                  {/* Liquidación Simplificada con Copiar Bizum */}
+                                  <div className="bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-white rounded-3xl border border-emerald-200 p-5 shadow-xs space-y-3">
+                                    <div className="flex items-center justify-between">
+                                      <h4 className="text-sm font-black text-emerald-950 uppercase tracking-wider flex items-center gap-2">
+                                        <Split className="w-4 h-4 text-emerald-600" /> Liquidación Inteligente (Bizum)
+                                      </h4>
+                                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-200">
+                                        Mínimas transferencias
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-600">
+                                      El sistema calcula quién paga a quién para saldar cuentas en el menor número de Bizums posible:
+                                    </p>
+
+                                    {balance.transferencias.length === 0 ? (
+                                      <div className="text-center py-4 text-xs font-bold text-emerald-800 bg-white/80 rounded-2xl border border-emerald-200">
+                                        🎉 ¡Cuentas saldadas! Nadie le debe dinero a nadie.
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-2">
+                                        {balance.transferencias.map((tx, idx) => (
+                                          <div key={idx} className="bg-white p-3.5 rounded-2xl border border-emerald-150 shadow-3xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2 text-xs">
+                                              <span className="font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-200">
+                                                {tx.deudor}
+                                              </span>
+                                              <span className="text-slate-400 font-bold">paga</span>
+                                              <span className="font-black text-emerald-700 text-sm bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">
+                                                {tx.importe.toFixed(2)} €
+                                              </span>
+                                              <span className="text-slate-400 font-bold">a</span>
+                                              <span className="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-200">
+                                                {tx.acreedor}
+                                              </span>
+                                            </div>
+                                            <button
+                                              onClick={() => handleCopiarBizum(tx.deudor, tx.acreedor, tx.importe, activeBote.titulo)}
+                                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-3 py-1.5 rounded-xl shadow-3xs flex items-center justify-center gap-1.5 transition shrink-0"
+                                              title="Copiar texto para enviar o recordar el Bizum"
+                                            >
+                                              <Copy className="w-3.5 h-3.5" /> Copiar Bizum
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Columna Derecha: Tickets y Compras (5 cols) */}
+                                <div className="lg:col-span-5 space-y-4">
+                                  <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs space-y-3">
+                                    <div className="flex items-center justify-between">
+                                      <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                                        <Receipt className="w-4 h-4 text-emerald-600" /> Gastos Registrados ({activeBote.gastos?.length || 0})
+                                      </h4>
+                                      <button
+                                        onClick={() => {
+                                          setNewGasto({
+                                            concepto: '',
+                                            importe: '',
+                                            pagadoPor: activeBote.participantes?.[0] || 'Isaac',
+                                            divididoEntre: activeBote.participantes ? [...activeBote.participantes] : HERMANOS_NOMBRES.slice(),
+                                            fecha: new Date().toISOString().split('T')[0]
+                                          });
+                                          setShowGastoModal(true);
+                                        }}
+                                        className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
+                                      >
+                                        <Plus className="w-3.5 h-3.5" /> Añadir
+                                      </button>
+                                    </div>
+
+                                    {!activeBote.gastos || activeBote.gastos.length === 0 ? (
+                                      <div className="text-center py-8 text-slate-400 text-xs">
+                                        <div className="text-3xl mb-2">🧾</div>
+                                        No hay tickets guardados en este bote aún.
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
+                                        {activeBote.gastos.map(g => (
+                                          <div key={g.id} className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-start justify-between gap-2">
+                                            <div className="space-y-1">
+                                              <div className="text-xs font-bold text-slate-800">{g.concepto}</div>
+                                              <div className="text-[10px] text-slate-500">
+                                                Pagado por <span className="font-bold text-slate-700">{g.pagadoPor}</span> • {formatearFechaStr(g.fecha)}
+                                              </div>
+                                              <div className="text-[9px] text-slate-400">
+                                                Repartido entre: {g.divididoEntre?.map(p => p.split(' ')[0]).join(', ')}
+                                              </div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              <span className="font-black text-sm text-slate-900 bg-white px-2 py-0.5 rounded-lg border border-slate-200">
+                                                {parseFloat(g.importe || 0).toFixed(2)} €
+                                              </span>
+                                              <button
+                                                onClick={() => handleDeleteGasto(activeBote.id, g.id)}
+                                                className="text-slate-350 hover:text-rose-500 p-1 rounded-lg transition"
+                                                title="Eliminar gasto"
+                                              >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="bg-white rounded-3xl border border-slate-200 p-8 text-center space-y-3">
+                              <div className="text-4xl">💰</div>
+                              <h3 className="font-bold text-slate-800 text-base">No hay botes registrados</h3>
+                              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                                Crea un bote para la próxima barbacoa, compra conjunta o regalo de cumpleaños y olvídate de hacer cuentas a mano.
                               </p>
-                              {evt.descripcion && <p className="text-xs text-slate-650 bg-slate-50 p-2 rounded-lg">{evt.descripcion}</p>}
-                              <div className="pt-1">
-                                <a
-                                  href={getGoogleCalendarUrlForEvent(evt)}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1.5 text-[11px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:text-indigo-800 px-3 py-1.5 rounded-xl border border-indigo-200 transition shadow-3xs"
-                                  title="Abrir y guardar en Google Calendar"
-                                >
-                                  <span>📅</span> Añadir a Google Calendar
-                                </a>
-                              </div>
+                              <button
+                                onClick={() => {
+                                  setNewBote({
+                                    titulo: '',
+                                    descripcion: '',
+                                    fecha: new Date().toISOString().split('T')[0],
+                                    participantes: HERMANOS_NOMBRES.slice(),
+                                    cerrado: false
+                                  });
+                                  setShowBoteModal(true);
+                                }}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-4 rounded-xl shadow-sm inline-flex items-center gap-1.5"
+                              >
+                                <Plus className="w-4 h-4" /> Crear Primer Bote
+                              </button>
                             </div>
-                            <div className="md:w-72 bg-slate-50 p-4 rounded-xl border border-slate-200">
-                              <p className="text-xs font-bold text-slate-600 mb-2">Confirmados:</p>
-                              <div className="flex flex-wrap gap-1">
-                                {integrantes.map(int => {
-                                  const asiste = evt.asistentes?.includes(int.nombre);
-                                  return (
-                                    <button
-                                      key={int.id}
-                                      onClick={() => alternarFamiliarEnEvento(evt.id, evt.asistentes || [], int.nombre)}
-                                      className={`text-[9px] px-2 py-0.5 rounded ${asiste ? 'bg-emerald-600 text-white font-bold' : 'bg-white border text-slate-600'}`}
-                                    >
-                                      {int.nombre}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          </div>
+                          )}
                         </div>
-                      ))}
-                    </div>
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -8379,6 +9983,236 @@ export default function App() {
                     </div>
                   </div>
                 )}
+
+                {/* ================= PÁGINA: ÁLBUM DE RECUERDOS FAMILIAR (FASE 5) ================= */}
+                {activeTab === 'album' && (
+                  <div className="space-y-6 animate-fadeIn">
+                    {/* Cabecera del Álbum */}
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-gradient-to-r from-purple-50 via-pink-50 to-amber-50 p-6 rounded-3xl border border-purple-150 shadow-sm">
+                      <div>
+                        <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-purple-700 bg-purple-100/70 px-2.5 py-0.5 rounded-full mb-1">
+                          <span>📸</span> Fase 5: Álbum Colaborativo
+                        </div>
+                        <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                          Álbum de Recuerdos de la Familia
+                        </h2>
+                        <p className="text-xs text-slate-600 mt-1">
+                          Fotos de barbacoas, vacaciones en Mazarrón y Sevilla, cumpleaños y recuerdos entrañables con reacciones ❤️ y comentarios.
+                        </p>
+                      </div>
+
+                      <div className="flex gap-2 flex-wrap">
+                        <button
+                          onClick={() => {
+                            setNuevaFoto({
+                              titulo: '',
+                              lugar: '',
+                              fecha: new Date().toISOString().split('T')[0],
+                              categoria: 'barbacoas',
+                              autor: matchedMember?.nombre || usuarioActivo || 'Familiar',
+                              imagenUrl: '',
+                              descripcion: ''
+                            });
+                            setShowSubirFotoModal(true);
+                          }}
+                          className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-md shrink-0 flex items-center gap-1.5 transition"
+                        >
+                          <Plus className="w-4 h-4" /> Subir Foto / Recuerdo
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Filtros de Categoría */}
+                    <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                      {[
+                        { id: 'todos', label: 'Todas las Fotos', icon: '🖼️' },
+                        { id: 'barbacoas', label: 'Barbacoas & Quedadas', icon: '🍖' },
+                        { id: 'vacaciones', label: 'Vacaciones Verano', icon: '🌴' },
+                        { id: 'cumples', label: 'Cumpleaños & Santos', icon: '🎂' },
+                        { id: 'recuerdos', label: 'Recuerdos de Familia', icon: '🕰️' }
+                      ].map(f => (
+                        <button
+                          key={f.id}
+                          onClick={() => setFiltroAlbum(f.id)}
+                          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+                            filtroAlbum === f.id
+                              ? 'bg-purple-600 text-white shadow-xs'
+                              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span>{f.icon}</span>
+                          <span>{f.label}</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Rejilla de Fotografías */}
+                    {(() => {
+                      const fotosFiltradas = fotosAlbum.filter(f => {
+                        if (filtroAlbum === 'todos') return true;
+                        return f.categoria === filtroAlbum;
+                      });
+
+                      if (fotosFiltradas.length === 0) {
+                        return (
+                          <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-3">
+                            <div className="text-4xl">📸</div>
+                            <h3 className="font-bold text-slate-800 text-base">No hay fotos en esta categoría aún</h3>
+                            <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                              Sé el primero en subir un recuerdo familiar para que todos los hermanos puedan verlo y comentar.
+                            </p>
+                            <button
+                              onClick={() => setShowSubirFotoModal(true)}
+                              className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs py-2 px-4 rounded-xl shadow-xs inline-flex items-center gap-1.5"
+                            >
+                              <Plus className="w-4 h-4" /> Subir la Primera Foto
+                            </button>
+                          </div>
+                        );
+                      }
+
+                      const miNombre = matchedMember?.nombre || usuarioActivo || 'Familiar';
+
+                      return (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                          {fotosFiltradas.map(foto => {
+                            const likesArray = Array.isArray(foto.likes) ? foto.likes : [];
+                            const yaDioLike = likesArray.includes(miNombre);
+                            const comentarios = Array.isArray(foto.comentarios) ? foto.comentarios : [];
+
+                            return (
+                              <div
+                                key={foto.id}
+                                className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden flex flex-col hover:shadow-md transition duration-200"
+                              >
+                                {/* Imagen con Lightbox Click */}
+                                <div
+                                  className="relative aspect-video bg-slate-900 overflow-hidden cursor-pointer group"
+                                  onClick={() => setFotoSeleccionadaLightbox(foto)}
+                                >
+                                  <img
+                                    src={foto.imagenUrl}
+                                    alt={foto.titulo}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                                    loading="lazy"
+                                  />
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 opacity-0 group-hover:opacity-100 transition duration-200 flex items-end p-3">
+                                    <span className="text-white text-xs font-bold flex items-center gap-1">
+                                      <span>🔍</span> Click para ver a tamaño completo
+                                    </span>
+                                  </div>
+                                  {foto.categoria && (
+                                    <span className="absolute top-3 left-3 bg-black/50 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-white/20">
+                                      {foto.categoria === 'barbacoas' ? '🍖 Barbacoa'
+                                        : foto.categoria === 'vacaciones' ? '🌴 Vacaciones'
+                                        : foto.categoria === 'cumples' ? '🎂 Cumple'
+                                        : '🕰️ Recuerdo'}
+                                    </span>
+                                  )}
+                                  {foto.lugar && (
+                                    <span className="absolute top-3 right-3 bg-white/90 backdrop-blur-md text-slate-800 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs">
+                                      📍 {foto.lugar}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Contenido y Detalles */}
+                                <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+                                  <div>
+                                    <div className="flex items-start justify-between gap-2">
+                                      <h3 className="font-bold text-slate-900 text-sm">{foto.titulo}</h3>
+                                      <button
+                                        onClick={() => handleDeleteFoto(foto.id)}
+                                        className="text-slate-300 hover:text-rose-500 p-1 rounded-lg transition"
+                                        title="Eliminar foto"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 mt-0.5">
+                                      📅 {formatearFechaStr(foto.fecha)} • Por <span className="font-bold text-slate-600">{foto.autor || 'Familiar'}</span>
+                                    </div>
+                                    {foto.descripcion && (
+                                      <p className="text-xs text-slate-600 mt-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100 leading-relaxed">
+                                        "{foto.descripcion}"
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  {/* Barra de Acciones: Reacciones y Telegram */}
+                                  <div className="border-t border-slate-100 pt-3 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                      <button
+                                        onClick={() => handleToggleLikeFoto(foto.id)}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                                          yaDioLike
+                                            ? 'bg-rose-50 text-rose-600 border border-rose-200'
+                                            : 'bg-slate-50 text-slate-500 hover:bg-rose-50 hover:text-rose-600'
+                                        }`}
+                                        title={likesArray.length > 0 ? `Les gusta a: ${likesArray.join(', ')}` : 'Dar me gusta'}
+                                      >
+                                        <Heart className={`w-4 h-4 ${yaDioLike ? 'fill-rose-500 text-rose-500' : ''}`} />
+                                        <span>{likesArray.length}</span>
+                                      </button>
+
+                                      <button
+                                        onClick={() => handleCompartirFotoTelegram(foto)}
+                                        className="text-sky-600 hover:text-sky-700 bg-sky-50 hover:bg-sky-100 px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition"
+                                        title="Avisar en Telegram"
+                                      >
+                                        <span>✈️</span> Compartir
+                                      </button>
+                                    </div>
+
+                                    {/* Comentarios */}
+                                    <div className="space-y-2 pt-1">
+                                      {comentarios.length > 0 && (
+                                        <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                                          {comentarios.map(c => (
+                                            <div key={c.id} className="text-[11px] bg-slate-50 p-2 rounded-xl">
+                                              <span className="font-bold text-slate-800">{c.autor}: </span>
+                                              <span className="text-slate-600">{c.texto}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+
+                                      {/* Añadir comentario */}
+                                      <div className="flex gap-1.5">
+                                        <input
+                                          type="text"
+                                          placeholder="Escribe un comentario..."
+                                          value={nuevoComentarioTexto[foto.id] || ''}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setNuevoComentarioTexto(prev => ({ ...prev, [foto.id]: val }));
+                                          }}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                              handleAñadirComentarioFoto(foto.id, nuevoComentarioTexto[foto.id]);
+                                            }
+                                          }}
+                                          className="flex-1 text-[11px] p-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-purple-400"
+                                        />
+                                        <button
+                                          onClick={() => handleAñadirComentarioFoto(foto.id, nuevoComentarioTexto[foto.id])}
+                                          className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10px] px-2.5 py-1 rounded-xl transition shrink-0"
+                                        >
+                                          Enviar
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
               </div>
             </div>
           )}
@@ -9234,6 +11068,655 @@ export default function App() {
                   >
                     Cerrar
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal del Asistente Inteligente (Lenguaje Natural / Voz) */}
+          {showAsistenteModal && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-fadeIn overflow-y-auto">
+              <div className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-slate-100 my-4">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="p-2 bg-gradient-to-br from-violet-500 to-indigo-600 text-white rounded-2xl text-lg shadow-sm">🪄</span>
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-base flex items-center gap-1.5">
+                        <span>Asistente Inteligente Familiar</span>
+                        <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-2 py-0.5 rounded-full">IA / Voz</span>
+                      </h3>
+                      <p className="text-[10px] text-slate-400">
+                        Escribe o dicta cualquier cita, traslado o quedada con palabras normales
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowAsistenteModal(false)}
+                    className="text-slate-400 hover:text-slate-600 font-bold p-1 text-base transition"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="space-y-3.5">
+                  <div className="relative">
+                    <textarea
+                      rows="3"
+                      placeholder="Ejemplos:&#10;• 'Cita de Mamá de cardiología el martes a las 11:30 en la Jiménez Díaz'&#10;• 'Llevar a los padres de Alcalá a Madrid el viernes a las 18:00'&#10;• 'Barbacoa en Munibáñez el 12 de octubre a las 14:00'"
+                      value={textoAsistente}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setTextoAsistente(val);
+                        setAnalisisAsistente(analizarTextoLenguajeNatural(val));
+                      }}
+                      className="w-full p-3.5 pr-12 text-xs rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner leading-relaxed"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={iniciarReconocimientoVoz}
+                      className={`absolute right-3 bottom-4 p-2 rounded-xl transition ${
+                        asistenteEscuchando
+                          ? 'bg-rose-500 text-white animate-pulse shadow-md'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                      title="Dictar por voz"
+                    >
+                      <Mic className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {asistenteEscuchando && (
+                    <div className="text-center text-xs font-bold text-rose-600 flex items-center justify-center gap-1.5 animate-pulse">
+                      <span className="w-2 h-2 rounded-full bg-rose-500"></span> Escuchando tu voz... Habla claro al micrófono
+                    </div>
+                  )}
+
+                  {/* Ejemplos rápidos en pills clickeables */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-[10px]">
+                    <span className="text-slate-400 font-bold whitespace-nowrap">Probar:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const txt = "Mamá tiene cardiólogo el próximo martes a las 11:30 en la Jiménez Díaz";
+                        setTextoAsistente(txt);
+                        setAnalisisAsistente(analizarTextoLenguajeNatural(txt));
+                      }}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg transition whitespace-nowrap"
+                    >
+                      🩺 Cita Mamá FJD
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const txt = "Traslado de Alcalá a Madrid el viernes a las 18:30";
+                        setTextoAsistente(txt);
+                        setAnalisisAsistente(analizarTextoLenguajeNatural(txt));
+                      }}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg transition whitespace-nowrap"
+                    >
+                      🚗 Traslado Alcalá ➔ Madrid
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const txt = "Barbacoa familiar en Munibáñez el 2 de mayo a las 14:00";
+                        setTextoAsistente(txt);
+                        setAnalisisAsistente(analizarTextoLenguajeNatural(txt));
+                      }}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg transition whitespace-nowrap"
+                    >
+                      🍖 Barbacoa Munibáñez
+                    </button>
+                  </div>
+
+                  {/* Previsualización del análisis */}
+                  {analisisAsistente && (
+                    <div className="bg-gradient-to-br from-indigo-50/70 to-purple-50/70 p-4 rounded-2xl border border-indigo-150 space-y-2.5 animate-fadeIn">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-indigo-700 flex items-center gap-1">
+                          <span>✨</span> Datos Interpretados con Éxito
+                        </span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border ${
+                          analisisAsistente.tipo === 'cita' ? 'bg-rose-100 text-rose-700 border-rose-200'
+                          : analisisAsistente.tipo === 'traslado' ? 'bg-amber-100 text-amber-800 border-amber-200'
+                          : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                        }`}>
+                          {analisisAsistente.tipo === 'cita' ? '🩺 Cita Médica'
+                            : analisisAsistente.tipo === 'traslado' ? '🚗 Traslado Padres'
+                            : '🍖 Evento / Quedada'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {analisisAsistente.tipo === 'cita' && (
+                          <>
+                            <div className="bg-white/80 p-2 rounded-xl">
+                              <span className="text-[10px] text-slate-400 font-bold block">PACIENTE</span>
+                              <span className="font-bold text-slate-800">{analisisAsistente.paciente}</span>
+                            </div>
+                            <div className="bg-white/80 p-2 rounded-xl">
+                              <span className="text-[10px] text-slate-400 font-bold block">ESPECIALIDAD</span>
+                              <span className="font-bold text-slate-800">{analisisAsistente.especialidad}</span>
+                            </div>
+                            <div className="bg-white/80 p-2 rounded-xl">
+                              <span className="text-[10px] text-slate-400 font-bold block">FECHA & HORA</span>
+                              <span className="font-bold text-slate-800">{analisisAsistente.fecha} ({analisisAsistente.hora})</span>
+                            </div>
+                            <div className="bg-white/80 p-2 rounded-xl">
+                              <span className="text-[10px] text-slate-400 font-bold block">CENTRO</span>
+                              <span className="font-bold text-slate-800">{analisisAsistente.centro}</span>
+                            </div>
+                          </>
+                        )}
+
+                        {analisisAsistente.tipo === 'traslado' && (
+                          <>
+                            <div className="bg-white/80 p-2 rounded-xl">
+                              <span className="text-[10px] text-slate-400 font-bold block">RUTA</span>
+                              <span className="font-bold text-slate-800">{analisisAsistente.origen} ➔ {analisisAsistente.destino}</span>
+                            </div>
+                            <div className="bg-white/80 p-2 rounded-xl">
+                              <span className="text-[10px] text-slate-400 font-bold block">FECHA & HORA</span>
+                              <span className="font-bold text-slate-800">{analisisAsistente.fecha} ({analisisAsistente.hora})</span>
+                            </div>
+                            <div className="bg-white/80 p-2 rounded-xl col-span-2">
+                              <span className="text-[10px] text-slate-400 font-bold block">CONDUCTOR PROPUESTO</span>
+                              <span className="font-bold text-slate-800">{analisisAsistente.conductor}</span>
+                            </div>
+                          </>
+                        )}
+
+                        {analisisAsistente.tipo === 'evento' && (
+                          <>
+                            <div className="bg-white/80 p-2 rounded-xl">
+                              <span className="text-[10px] text-slate-400 font-bold block">TÍTULO</span>
+                              <span className="font-bold text-slate-800">{analisisAsistente.titulo}</span>
+                            </div>
+                            <div className="bg-white/80 p-2 rounded-xl">
+                              <span className="text-[10px] text-slate-400 font-bold block">LUGAR</span>
+                              <span className="font-bold text-slate-800">{analisisAsistente.lugar}</span>
+                            </div>
+                            <div className="bg-white/80 p-2 rounded-xl col-span-2">
+                              <span className="text-[10px] text-slate-400 font-bold block">FECHA & HORA</span>
+                              <span className="font-bold text-slate-800">{analisisAsistente.fecha} ({analisisAsistente.hora})</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      <div className="pt-2 flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowAsistenteModal(false)}
+                          className="px-3.5 py-2 rounded-xl text-slate-500 hover:bg-white/60 font-bold transition text-xs"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleConfirmarAsistente}
+                          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-bold transition shadow-md text-xs flex items-center gap-1.5"
+                        >
+                          <span>✨ Guardar Directamente</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal para Crear / Editar Bote de Gastos */}
+          {showBoteModal && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-fadeIn overflow-y-auto">
+              <div className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-slate-100 my-4">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="p-2 bg-emerald-100 text-emerald-700 rounded-2xl text-lg shadow-sm">💰</span>
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-base">Crear Bote Familiar</h3>
+                      <p className="text-[10px] text-slate-400">
+                        Para barbacoas, compras conjuntas o regalos compartidos
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowBoteModal(false)}
+                    className="text-slate-400 hover:text-slate-600 font-bold p-1 text-base transition"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveBote} className="space-y-3.5 text-xs">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Título del Bote o Evento *</label>
+                    <input
+                      type="text"
+                      placeholder="Ej: Barbacoa Munibáñez, Regalo 80 Cumpleaños Papá..."
+                      value={newBote.titulo}
+                      onChange={(e) => setNewBote(prev => ({ ...prev, titulo: e.target.value }))}
+                      required
+                      className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Fecha</label>
+                      <input
+                        type="date"
+                        value={newBote.fecha}
+                        onChange={(e) => setNewBote(prev => ({ ...prev, fecha: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Estado</label>
+                      <select
+                        value={newBote.cerrado ? 'cerrado' : 'abierto'}
+                        onChange={(e) => setNewBote(prev => ({ ...prev, cerrado: e.target.value === 'cerrado' }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                      >
+                        <option value="abierto">🟢 Abierto (En curso)</option>
+                        <option value="cerrado">🔒 Cerrado (Saldado)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Descripción / Notas</label>
+                    <textarea
+                      rows="2"
+                      placeholder="Ej: Comida del sábado en la finca. Guardad todos los tickets para calcular Bizum."
+                      value={newBote.descripcion}
+                      onChange={(e) => setNewBote(prev => ({ ...prev, descripcion: e.target.value }))}
+                      className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-[11px] font-bold text-slate-600">
+                        Participantes en el Reparto ({newBote.participantes?.length || 0})
+                      </label>
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setNewBote(prev => ({ ...prev, participantes: HERMANOS_NOMBRES.slice() }))}
+                          className="text-[10px] text-emerald-700 font-bold hover:underline"
+                        >
+                          Solo Hermanos
+                        </button>
+                        <span className="text-slate-300">|</span>
+                        <button
+                          type="button"
+                          onClick={() => setNewBote(prev => ({ ...prev, participantes: integrantes.map(i => i.nombre) }))}
+                          className="text-[10px] text-emerald-700 font-bold hover:underline"
+                        >
+                          Todos
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-200">
+                      {integrantes.map(int => {
+                        const isSelected = newBote.participantes?.includes(int.nombre);
+                        return (
+                          <button
+                            key={int.id || int.nombre}
+                            type="button"
+                            onClick={() => {
+                              setNewBote(prev => {
+                                const current = prev.participantes || [];
+                                if (current.includes(int.nombre)) {
+                                  return { ...prev, participantes: current.filter(p => p !== int.nombre) };
+                                } else {
+                                  return { ...prev, participantes: [...current, int.nombre] };
+                                }
+                              });
+                            }}
+                            className={`text-[10px] px-2.5 py-1 rounded-lg font-bold border transition ${
+                              isSelected
+                                ? 'bg-emerald-600 text-white border-emerald-700'
+                                : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
+                            }`}
+                          >
+                            {isSelected ? '✓ ' : '+ '}{int.nombre}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setShowBoteModal(false)}
+                      className="px-4 py-2 rounded-xl text-slate-500 hover:bg-slate-100 font-bold transition"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition shadow-sm"
+                    >
+                      Crear Bote
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Modal para Añadir Gasto / Ticket */}
+          {showGastoModal && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-fadeIn overflow-y-auto">
+              <div className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-slate-100 my-4">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="p-2 bg-emerald-100 text-emerald-700 rounded-2xl text-lg shadow-sm">🧾</span>
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-base">Añadir Ticket de Gasto</h3>
+                      <p className="text-[10px] text-slate-400">
+                        Registra una compra para repartir en este bote
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowGastoModal(false)}
+                    className="text-slate-400 hover:text-slate-600 font-bold p-1 text-base transition"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveGasto} className="space-y-3.5 text-xs">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Concepto del Gasto *</label>
+                    <input
+                      type="text"
+                      placeholder="Ej: Carne de barbacoa, Bebidas Mercadona, Carbón..."
+                      value={newGasto.concepto}
+                      onChange={(e) => setNewGasto(prev => ({ ...prev, concepto: e.target.value }))}
+                      required
+                      className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Importe (€) *</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        placeholder="Ej: 47.50"
+                        value={newGasto.importe}
+                        onChange={(e) => setNewGasto(prev => ({ ...prev, importe: e.target.value }))}
+                        required
+                        className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-black text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Fecha</label>
+                      <input
+                        type="date"
+                        value={newGasto.fecha}
+                        onChange={(e) => setNewGasto(prev => ({ ...prev, fecha: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">¿Quién pagó este ticket? *</label>
+                    <select
+                      value={newGasto.pagadoPor}
+                      onChange={(e) => setNewGasto(prev => ({ ...prev, pagadoPor: e.target.value }))}
+                      required
+                      className="w-full p-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
+                    >
+                      {(() => {
+                        const activeB = botesGastos.find(b => b.id === selectedBoteId) || botesGastos[0];
+                        const opciones = activeB?.participantes?.length ? activeB.participantes : HERMANOS_NOMBRES;
+                        return opciones.map(p => (
+                          <option key={p} value={p}>
+                            👤 {p}
+                          </option>
+                        ));
+                      })()}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      ¿Entre quiénes se divide este gasto? ({newGasto.divididoEntre?.length || 0})
+                    </label>
+                    <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-200">
+                      {(() => {
+                        const activeB = botesGastos.find(b => b.id === selectedBoteId) || botesGastos[0];
+                        const opciones = activeB?.participantes?.length ? activeB.participantes : HERMANOS_NOMBRES;
+                        return opciones.map(persona => {
+                          const isChecked = newGasto.divididoEntre?.includes(persona);
+                          return (
+                            <button
+                              key={persona}
+                              type="button"
+                              onClick={() => {
+                                setNewGasto(prev => {
+                                  const current = prev.divididoEntre || [];
+                                  if (current.includes(persona)) {
+                                    if (current.length === 1) return prev; // Mantener al menos 1
+                                    return { ...prev, divididoEntre: current.filter(p => p !== persona) };
+                                  } else {
+                                    return { ...prev, divididoEntre: [...current, persona] };
+                                  }
+                                });
+                              }}
+                              className={`text-[10px] px-2.5 py-1 rounded-lg font-bold border transition ${
+                                isChecked
+                                  ? 'bg-emerald-600 text-white border-emerald-700'
+                                  : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
+                              }`}
+                            >
+                              {isChecked ? '✓ ' : '+ '}{persona}
+                            </button>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setShowGastoModal(false)}
+                      className="px-4 py-2 rounded-xl text-slate-500 hover:bg-slate-100 font-bold transition"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition shadow-sm"
+                    >
+                      Guardar Ticket
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Modal para Subir Foto al Álbum (Fase 5) */}
+          {showSubirFotoModal && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-fadeIn overflow-y-auto">
+              <div className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-slate-100 my-4">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="p-2 bg-purple-100 text-purple-700 rounded-2xl text-lg shadow-sm">📸</span>
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-base">Subir Foto al Álbum Familiar</h3>
+                      <p className="text-[10px] text-slate-400">
+                        Comparte un recuerdo con todos los hermanos y los padres
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowSubirFotoModal(false)}
+                    className="text-slate-400 hover:text-slate-600 font-bold p-1 text-base transition"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <form onSubmit={handleSubirFoto} className="space-y-3.5 text-xs">
+                  {/* Selector / Cámara */}
+                  <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-2xl border border-purple-150 text-center space-y-2">
+                    {nuevaFoto.imagenUrl ? (
+                      <div className="relative aspect-video rounded-xl overflow-hidden border border-purple-200 shadow-xs">
+                        <img src={nuevaFoto.imagenUrl} alt="Vista previa" className="w-full h-full object-cover" />
+                        <label className="absolute bottom-2 right-2 bg-purple-600/90 hover:bg-purple-700 text-white font-bold text-[10px] px-3 py-1.5 rounded-xl cursor-pointer shadow-md transition flex items-center gap-1">
+                          <Camera className="w-3 h-3" /> Cambiar Foto
+                          <input type="file" accept="image/*" className="hidden" onChange={handleFotoArchivoSeleccionada} />
+                        </label>
+                      </div>
+                    ) : (
+                      <label className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-purple-300 rounded-2xl cursor-pointer hover:bg-white/60 transition">
+                        <Camera className="w-8 h-8 text-purple-500 mb-1" />
+                        <span className="font-bold text-purple-900 text-xs">Tocar para hacer foto o elegir de la galería</span>
+                        <span className="text-[10px] text-purple-600">Se optimiza automáticamente para no ocupar espacio</span>
+                        <input type="file" accept="image/*" className="hidden" onChange={handleFotoArchivoSeleccionada} />
+                      </label>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Título o Momento *</label>
+                    <input
+                      type="text"
+                      placeholder="Ej: Barbacoa en Munibáñez, Cumpleaños de Mamá..."
+                      value={nuevaFoto.titulo}
+                      onChange={(e) => setNuevaFoto(prev => ({ ...prev, titulo: e.target.value }))}
+                      required
+                      className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Lugar</label>
+                      <input
+                        type="text"
+                        placeholder="Ej: Munibáñez, Alcalá, Mazarrón..."
+                        value={nuevaFoto.lugar}
+                        onChange={(e) => setNuevaFoto(prev => ({ ...prev, lugar: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Fecha</label>
+                      <input
+                        type="date"
+                        value={nuevaFoto.fecha}
+                        onChange={(e) => setNuevaFoto(prev => ({ ...prev, fecha: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Categoría</label>
+                      <select
+                        value={nuevaFoto.categoria}
+                        onChange={(e) => setNuevaFoto(prev => ({ ...prev, categoria: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 font-bold"
+                      >
+                        <option value="barbacoas">🍖 Barbacoas & Quedadas</option>
+                        <option value="vacaciones">🌴 Vacaciones Verano</option>
+                        <option value="cumples">🎂 Cumpleaños & Santos</option>
+                        <option value="recuerdos">🕰️ Recuerdos Familiares</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">¿Quién la sube?</label>
+                      <select
+                        value={nuevaFoto.autor || matchedMember?.nombre || usuarioActivo}
+                        onChange={(e) => setNuevaFoto(prev => ({ ...prev, autor: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 font-bold"
+                      >
+                        {integrantes.map(i => (
+                          <option key={i.id || i.nombre} value={i.nombre}>
+                            👤 {i.nombre}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Comentario o Anécdota</label>
+                    <textarea
+                      rows="2"
+                      placeholder="Cuenta algo bonito o gracioso sobre este momento..."
+                      value={nuevaFoto.descripcion}
+                      onChange={(e) => setNuevaFoto(prev => ({ ...prev, descripcion: e.target.value }))}
+                      className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium leading-relaxed"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setShowSubirFotoModal(false)}
+                      className="px-4 py-2 rounded-xl text-slate-500 hover:bg-slate-100 font-bold transition"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={!nuevaFoto.imagenUrl}
+                      className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold transition shadow-sm"
+                    >
+                      Publicar Foto
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Lightbox para Ver Foto en Grande */}
+          {fotoSeleccionadaLightbox && (
+            <div
+              className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 z-50 animate-fadeIn"
+              onClick={() => setFotoSeleccionadaLightbox(null)}
+            >
+              <div
+                className="max-w-4xl w-full max-h-[90vh] flex flex-col items-center justify-center relative"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  onClick={() => setFotoSeleccionadaLightbox(null)}
+                  className="absolute -top-10 right-0 text-white hover:text-rose-400 font-black text-xl p-2 transition"
+                >
+                  ✕ Cerrar
+                </button>
+                <img
+                  src={fotoSeleccionadaLightbox.imagenUrl}
+                  alt={fotoSeleccionadaLightbox.titulo}
+                  className="max-h-[75vh] w-auto object-contain rounded-2xl shadow-2xl"
+                />
+                <div className="bg-slate-900/80 backdrop-blur-md p-4 rounded-2xl text-white mt-3 w-full max-w-xl text-center space-y-1">
+                  <h3 className="font-bold text-base">{fotoSeleccionadaLightbox.titulo}</h3>
+                  <p className="text-xs text-slate-300">
+                    📍 {fotoSeleccionadaLightbox.lugar || 'Familiar'} • 📅 {formatearFechaStr(fotoSeleccionadaLightbox.fecha)} • Por {fotoSeleccionadaLightbox.autor || 'Familiar'}
+                  </p>
+                  {fotoSeleccionadaLightbox.descripcion && (
+                    <p className="text-xs text-purple-200 italic mt-1">"{fotoSeleccionadaLightbox.descripcion}"</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -10904,8 +13387,9 @@ export default function App() {
               { id: 'inicio', label: 'Inicio', icon: Home },
               { id: 'traslados', label: 'Padres 🚗', icon: Car },
               { id: 'citas', label: 'Salud 🩺', icon: Activity },
-              { id: 'cumples', label: 'Cumples', icon: Gift },
-              { id: 'arbol', label: 'Árbol', icon: Users }
+              { id: 'album', label: 'Álbum 📸', icon: Image },
+              { id: 'eventos', label: 'Botes 💰', icon: Wallet },
+              { id: 'cumples', label: 'Cumples 🎂', icon: Gift }
             ].map(tab => {
               const Icon = tab.icon;
               return (

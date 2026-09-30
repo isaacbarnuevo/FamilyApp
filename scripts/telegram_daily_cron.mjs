@@ -51,15 +51,19 @@ function matchesSaintDate(santoStr, fechaObj) {
   return s.includes(patron1) || s.includes(patron2) || s.includes(patron3) || s.includes(patron4);
 }
 
-async function enviarMensajeTelegram(texto) {
+async function enviarMensajeTelegram(texto, replyMarkup = null) {
+  const payload = {
+    chat_id: TELEGRAM_CHAT_ID,
+    text: texto,
+    parse_mode: 'HTML'
+  };
+  if (replyMarkup) {
+    payload.reply_markup = replyMarkup;
+  }
   const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: TELEGRAM_CHAT_ID,
-      text: texto,
-      parse_mode: 'HTML'
-    })
+    body: JSON.stringify(payload)
   });
   const data = await res.json();
   return data && data.ok;
@@ -356,8 +360,24 @@ export async function runDailyDigest(force = false) {
 
   msg += `👉 <a href="https://familiabarnuevoapp.web.app">Abrir App Familiar</a>`;
 
+  const replyMarkup = {
+    inline_keyboard: [
+      [
+        { text: "🚗 Traslados Padres", url: "https://familiabarnuevoapp.web.app/?tab=traslados" },
+        { text: "🩺 Citas y Salud", url: "https://familiabarnuevoapp.web.app/?tab=citas" }
+      ],
+      [
+        { text: "🍖 Quedadas / Barbacoas", url: "https://familiabarnuevoapp.web.app/?tab=eventos" },
+        { text: "🏖️ Vacaciones", url: "https://familiabarnuevoapp.web.app/?tab=vacaciones" }
+      ],
+      [
+        { text: "🌐 Abrir FamilyApp", url: "https://familiabarnuevoapp.web.app" }
+      ]
+    ]
+  };
+
   console.log("Enviando mensaje a Telegram:\n", msg);
-  const ok = await enviarMensajeTelegram(msg);
+  const ok = await enviarMensajeTelegram(msg, replyMarkup);
 
   if (ok) {
     console.log("✅ Mensaje enviado a Telegram con éxito.");
