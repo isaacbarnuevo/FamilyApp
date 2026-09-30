@@ -1645,6 +1645,24 @@ export default function App() {
       }
     }
 
+    if (trasladosPasados.length > 0) {
+      const ultimoPasado = [...trasladosPasados].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '') || (b.hora || '').localeCompare(a.hora || ''))[0];
+      if (ultimoPasado && ultimoPasado.destino) {
+        const d = (ultimoPasado.destino || '').toLowerCase();
+        const destNorm = d.includes('madrid') ? 'Madrid' : (d.includes('alcalá') || d.includes('alcala') || d.includes('esgaravita') ? 'Alcalá (Esgaravita)' : ultimoPasado.destino);
+        setUbicacionActualPadres(destNorm);
+        localStorage.setItem('family_app_ubicacion_padres', destNorm);
+        if (isCloudMode && user && !isLocalMode) {
+          try {
+            const docRef = doc(db, 'artifacts', appId, 'public', 'config_ubicacion_padres');
+            setDoc(docRef, { ubicacion: destNorm, actualizadoPor: 'Limpieza automática de traslados', fecha: new Date().toISOString() }, { merge: true });
+          } catch (e) {
+            console.warn(e);
+          }
+        }
+      }
+    }
+
     const citasActualizadas = (citasActuales || []).filter(c => !c.fecha || c.fecha >= hoyIso);
     setCitasMedicas(citasActualizadas);
     persistLocal('citasMedicas', citasActualizadas);
@@ -3268,14 +3286,15 @@ export default function App() {
         }
 
         // Actualizar automáticamente la ubicación de los padres al destino del traslado registrado
-        const destNorm = (trasladoData.destino || '').toLowerCase().includes('madrid')
+        const d = (trasladoData.destino || '').toLowerCase();
+        const destNorm = d.includes('madrid')
           ? 'Madrid'
-          : ((trasladoData.destino || '').toLowerCase().includes('alcalá') || (trasladoData.destino || '').toLowerCase().includes('esgaravita'))
+          : (d.includes('alcalá') || d.includes('alcala') || d.includes('esgaravita')
             ? 'Alcalá (Esgaravita)'
-            : trasladoData.destino;
+            : trasladoData.destino);
 
         if (destNorm) {
-          handleChangeUbicacionPadres(destNorm, false);
+          handleChangeUbicacionPadres(destNorm, false, false);
         }
 
         resetTrasladoForm();
@@ -3303,14 +3322,15 @@ export default function App() {
       }
 
       // Actualizar automáticamente la ubicación de los padres al destino del traslado registrado
-      const destNorm = (trasladoData.destino || '').toLowerCase().includes('madrid')
+      const d = (trasladoData.destino || '').toLowerCase();
+      const destNorm = d.includes('madrid')
         ? 'Madrid'
-        : ((trasladoData.destino || '').toLowerCase().includes('alcalá') || (trasladoData.destino || '').toLowerCase().includes('esgaravita'))
+        : (d.includes('alcalá') || d.includes('alcala') || d.includes('esgaravita')
           ? 'Alcalá (Esgaravita)'
-          : trasladoData.destino;
+          : trasladoData.destino);
 
       if (destNorm) {
-        handleChangeUbicacionPadres(destNorm, false);
+        handleChangeUbicacionPadres(destNorm, false, false);
       }
 
       resetTrasladoForm();
@@ -3471,11 +3491,12 @@ export default function App() {
   const handleToggleEstadoTraslado = async (traslado) => {
     const nuevoEstado = traslado.estado === 'realizado' ? 'pendiente' : 'realizado';
     const isLocal = typeof traslado.id === 'string' && traslado.id.startsWith('tras_');
-    const destNorm = (traslado.destino || '').toLowerCase().includes('madrid')
+    const d = (traslado.destino || '').toLowerCase();
+    const destNorm = d.includes('madrid')
       ? 'Madrid'
-      : ((traslado.destino || '').toLowerCase().includes('alcalá') || (traslado.destino || '').toLowerCase().includes('esgaravita'))
+      : (d.includes('alcalá') || d.includes('alcala') || d.includes('esgaravita')
         ? 'Alcalá (Esgaravita)'
-        : traslado.destino;
+        : traslado.destino);
 
     if (isCloudMode && user && !isLocalMode && !isLocal) {
       try {
@@ -3483,7 +3504,7 @@ export default function App() {
           estado: nuevoEstado
         });
         if (nuevoEstado === 'realizado') {
-          handleChangeUbicacionPadres(destNorm, false);
+          handleChangeUbicacionPadres(destNorm, false, false);
         }
         triggerToast(nuevoEstado === 'realizado' ? `✅ Traslado realizado (Padres en ${destNorm})` : '⏳ Traslado reactivado');
       } catch (err) {
@@ -3494,7 +3515,7 @@ export default function App() {
       setTrasladosPadres(updated);
       persistLocal('trasladosPadres', updated);
       if (nuevoEstado === 'realizado') {
-        handleChangeUbicacionPadres(destNorm, false);
+        handleChangeUbicacionPadres(destNorm, false, false);
       }
       triggerToast(nuevoEstado === 'realizado' ? `✅ Traslado realizado (Padres en ${destNorm})` : '⏳ Traslado reactivado');
     }
@@ -3522,17 +3543,27 @@ export default function App() {
     }
   };
 
-  const handleChangeUbicacionPadres = async (nuevaUbicacion, notify = true) => {
-    setUbicacionActualPadres(nuevaUbicacion);
-    localStorage.setItem('family_app_ubicacion_padres', nuevaUbicacion);
-    localStorage.setItem('family_app_ubicacion_padres_fecha', new Date().toISOString());
+  const handleChangeUbicacionPadres = async (nuevaUbicacion, notify = true, esManual = false) => {
+    const d = (nuevaUbicacion || '').toLowerCase();
+    const ubicacionFinal = d.includes('madrid')
+      ? 'Madrid'
+      : (d.includes('alcalá') || d.includes('alcala') || d.includes('esgaravita')
+        ? 'Alcalá (Esgaravita)'
+        : nuevaUbicacion);
+
+    setUbicacionActualPadres(ubicacionFinal);
+    localStorage.setItem('family_app_ubicacion_padres', ubicacionFinal);
+    if (esManual) {
+      localStorage.setItem('family_app_ubicacion_padres_manual', new Date().toISOString());
+    }
 
     if (isCloudMode && user && !isLocalMode) {
       try {
         const docRef = doc(db, 'artifacts', appId, 'public', 'config_ubicacion_padres');
         await setDoc(docRef, {
-          ubicacion: nuevaUbicacion,
+          ubicacion: ubicacionFinal,
           actualizadoPor: usuarioActivo,
+          esManual: !!esManual,
           fecha: new Date().toISOString()
         }, { merge: true });
       } catch (e) {
@@ -3540,13 +3571,13 @@ export default function App() {
       }
     }
 
-    triggerToast(`📍 Ubicación de los padres: ${nuevaUbicacion}`);
     if (notify) {
-      enviarMensajeTelegram(`📍 <b>Aviso Familiar:</b> Los padres están actualmente en <b>${nuevaUbicacion}</b> (actualizado por ${usuarioActivo}).`);
+      triggerToast(`📍 Ubicación de los padres: ${ubicacionFinal}`);
+      enviarMensajeTelegram(`📍 <b>Aviso Familiar:</b> Los padres están actualmente en <b>${ubicacionFinal}</b> (actualizado por ${usuarioActivo}).`);
     }
   };
 
-  // Sincronización inteligente de la ubicación de los padres según traslados
+  // Sincronización inteligente y automática de la ubicación de los padres según traslados
   useEffect(() => {
     if (!trasladosPadres || trasladosPadres.length === 0) return;
     const hoyIso = getFechaHoyLocal(new Date());
@@ -3557,21 +3588,23 @@ export default function App() {
 
     if (trasladosPasados.length > 0) {
       const ultimo = trasladosPasados[0];
-      const destNorm = (ultimo.destino || '').toLowerCase().includes('madrid')
+      const d = (ultimo.destino || '').toLowerCase();
+      const destNorm = d.includes('madrid')
         ? 'Madrid'
-        : ((ultimo.destino || '').toLowerCase().includes('alcalá') || (ultimo.destino || '').toLowerCase().includes('esgaravita'))
+        : (d.includes('alcalá') || d.includes('alcala') || d.includes('esgaravita')
           ? 'Alcalá (Esgaravita)'
-          : ultimo.destino;
+          : ultimo.destino);
 
       if (destNorm && destNorm !== ubicacionActualPadres) {
-        const ultimaConfig = localStorage.getItem('family_app_ubicacion_padres_fecha');
-        if (!ultimaConfig || new Date(ultimaConfig).getTime() < new Date(ultimo.fecha).getTime()) {
-          setUbicacionActualPadres(destNorm);
-          localStorage.setItem('family_app_ubicacion_padres', destNorm);
+        const manualIso = localStorage.getItem('family_app_ubicacion_padres_manual');
+        const fechaHoraTraslado = `${ultimo.fecha}T${ultimo.hora || '23:59'}:00`;
+        // Si no hay cambio manual o si el traslado ocurrió después del cambio manual, sincronizar automáticamente a Firestore y local
+        if (!manualIso || manualIso < fechaHoraTraslado) {
+          handleChangeUbicacionPadres(destNorm, false, false);
         }
       }
     }
-  }, [trasladosPadres]);
+  }, [trasladosPadres, ubicacionActualPadres]);
 
   const handleEnviarResumenTrasladosTelegram = async () => {
     const pendientes = trasladosPadres
@@ -5373,7 +5406,9 @@ export default function App() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <button
                             onClick={() => handleChangeUbicacionPadres(
-                              ubicacionActualPadres.includes('Alcalá') ? 'Madrid' : 'Alcalá (Esgaravita)'
+                              ubicacionActualPadres.includes('Alcalá') ? 'Madrid' : 'Alcalá (Esgaravita)',
+                              true,
+                              true
                             )}
                             className="text-xs font-bold px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 transition flex items-center gap-1.5"
                             title="Cambiar la ubicación actual de los padres"
@@ -6811,7 +6846,7 @@ export default function App() {
 
                         <div className="flex gap-2 shrink-0">
                           <button
-                            onClick={() => handleChangeUbicacionPadres('Alcalá (Esgaravita)')}
+                            onClick={() => handleChangeUbicacionPadres('Alcalá (Esgaravita)', true, true)}
                             className={`px-4 py-2 rounded-xl text-xs font-bold border transition shadow-2xs flex items-center gap-1.5 ${
                               ubicacionActualPadres.includes('Alcalá')
                                 ? 'bg-emerald-600 text-white border-emerald-700'
@@ -6821,7 +6856,7 @@ export default function App() {
                             <span>🌿</span> Alcalá (Esgaravita)
                           </button>
                           <button
-                            onClick={() => handleChangeUbicacionPadres('Madrid')}
+                            onClick={() => handleChangeUbicacionPadres('Madrid', true, true)}
                             className={`px-4 py-2 rounded-xl text-xs font-bold border transition shadow-2xs flex items-center gap-1.5 ${
                               ubicacionActualPadres.includes('Madrid')
                                 ? 'bg-blue-600 text-white border-blue-700'
