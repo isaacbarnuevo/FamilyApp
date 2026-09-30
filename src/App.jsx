@@ -60,7 +60,14 @@ import {
   Car,
   ArrowRight,
   Navigation,
-  Camera
+  Camera,
+  Pill,
+  PhoneCall,
+  Phone,
+  ShieldAlert,
+  ClipboardList,
+  FileCheck,
+  Ambulance
 } from 'lucide-react';
 import { extraerDatosCitaDesdeFoto } from './ocrCitas';
 
@@ -718,6 +725,159 @@ const TRASLADOS_PADRES_PREDEFINIDOS = [
   }
 ];
 
+const MEDICACION_PREDEFINIDA = [
+  {
+    id: 'med_1',
+    paciente: 'Papá (Jaime)',
+    nombre: 'Omeprazol',
+    dosis: '20 mg',
+    momento: 'Desayuno',
+    indicaciones: 'En ayunas antes de desayunar con agua.',
+    activo: true
+  },
+  {
+    id: 'med_2',
+    paciente: 'Papá (Jaime)',
+    nombre: 'Enalapril',
+    dosis: '10 mg',
+    momento: 'Desayuno',
+    indicaciones: 'Para el control de la tensión arterial.',
+    activo: true
+  },
+  {
+    id: 'med_3',
+    paciente: 'Papá (Jaime)',
+    nombre: 'Adiro',
+    dosis: '100 mg',
+    momento: 'Comida',
+    indicaciones: 'Tomar durante el almuerzo.',
+    activo: true
+  },
+  {
+    id: 'med_4',
+    paciente: 'Papá (Jaime)',
+    nombre: 'Atorvastatina',
+    dosis: '20 mg',
+    momento: 'Cena',
+    indicaciones: 'Protector cardiovascular por la noche.',
+    activo: true
+  },
+  {
+    id: 'med_5',
+    paciente: 'Mamá (Encarnación)',
+    nombre: 'Calcio con Vitamina D',
+    dosis: '1 sobre',
+    momento: 'Desayuno',
+    indicaciones: 'Disolver en agua con el desayuno.',
+    activo: true
+  },
+  {
+    id: 'med_6',
+    paciente: 'Mamá (Encarnación)',
+    nombre: 'Paracetamol',
+    dosis: '1 g',
+    momento: 'Comida',
+    indicaciones: 'Si hay dolor articular o muscular.',
+    activo: true
+  }
+];
+
+const HISTORIAL_MEDICO_PREDEFINIDO = [
+  {
+    id: 'hist_1',
+    fecha: '2026-09-02',
+    paciente: 'Papá (Jaime)',
+    especialidad: 'Cardiología',
+    medico: 'Dr. Fernando Rodríguez',
+    centro: 'Fundación Jiménez Díaz',
+    acompano: 'Rebeca',
+    notasMedicas: 'Tensión arterial controlada (12/7). El electrocardiograma muestra ritmo sinusal estable. Mantener Enalapril 10mg.',
+    proximaRevision: 'Revisión en 6 meses con analítica completa de control.'
+  },
+  {
+    id: 'hist_2',
+    fecha: '2026-08-20',
+    paciente: 'Mamá (Encarnación)',
+    especialidad: 'Traumatología',
+    medico: 'Dra. Pilar Gómez',
+    centro: 'Hospital Univ. Príncipe de Asturias',
+    acompano: 'Isaac (Isik)',
+    notasMedicas: 'Buena movilidad de la rodilla izquierda. Seguir con paseos diarios suaves de 20 minutos. Tomar Paracetamol 1g solo si hay molestias.',
+    proximaRevision: 'Revisión anual en traumatología.'
+  }
+];
+
+const CONTACTOS_EMERGENCIA_PREDEFINIDOS = [
+  {
+    id: 'cont_1',
+    nombre: 'Hospital Fundación Jiménez Díaz (FJD)',
+    subtitulo: 'Hospital de referencia de los padres (Madrid)',
+    telefono: '915504800',
+    tipo: 'hospital',
+    icono: '🏥',
+    direccion: 'Av. Reyes Católicos, 2, 28040 Madrid',
+    badge: 'Madrid 🔵'
+  },
+  {
+    id: 'cont_2',
+    nombre: 'Hospital Univ. Príncipe de Asturias',
+    subtitulo: 'Hospital de Urgencias de Alcalá de Henares',
+    telefono: '918878100',
+    tipo: 'hospital',
+    icono: '🏥',
+    direccion: 'Carretera Alcalá-Meco, s/n, 28805 Alcalá de Henares',
+    badge: 'Alcalá 🟢'
+  },
+  {
+    id: 'cont_3',
+    nombre: 'Centro de Salud Juan de Austria',
+    subtitulo: 'Médico de cabecera y enfermería en Alcalá',
+    telefono: '918824111',
+    tipo: 'ambulatorio',
+    icono: '🩺',
+    direccion: 'C/ Juan de Austria, 19, Alcalá de Henares',
+    badge: 'Alcalá 🟢'
+  },
+  {
+    id: 'cont_4',
+    nombre: 'Farmacia 24 Horas más cercana',
+    subtitulo: 'Urgencias farmacéuticas en Alcalá',
+    telefono: '918880123',
+    tipo: 'farmacia',
+    icono: '💊',
+    direccion: 'Vía Complutense, 42, Alcalá de Henares',
+    badge: 'Alcalá 🟢'
+  },
+  {
+    id: 'cont_5',
+    nombre: 'Teléfono de Casa (Esgaravita)',
+    subtitulo: 'Teléfono fijo de los padres en la finca',
+    telefono: '918888888',
+    tipo: 'casa',
+    icono: '🏡',
+    direccion: 'Finca Esgaravita, Alcalá de Henares',
+    badge: 'Esgaravita 🌿'
+  },
+  {
+    id: 'cont_6',
+    nombre: 'Servicio de Emergencias Sanitarias (112)',
+    subtitulo: 'Urgencias Médicas y Ambulancias CAM',
+    telefono: '112',
+    tipo: 'emergencia',
+    icono: '🚨',
+    badge: 'Emergencias 24h'
+  },
+  {
+    id: 'cont_7',
+    nombre: 'EuroTaxi Adaptado (Movilidad reducida)',
+    subtitulo: 'Vehículo adaptado para traslados con silla de ruedas',
+    telefono: '915478200',
+    tipo: 'taxi',
+    icono: '🚕',
+    badge: 'Transporte adaptado'
+  }
+];
+
 const generateGoogleCalendarUrlForTraslado = (traslado) => {
   if (!traslado || !traslado.fecha) return '#';
   const cleanFecha = traslado.fecha.replace(/-/g, '');
@@ -787,6 +947,13 @@ export default function App() {
   const [ideas, setIdeas] = useState(() => getInitialState('ideas', []));
   const [citasMedicas, setCitasMedicas] = useState(() => getInitialState('citasMedicas', CITAS_MEDICAS_PREDEFINIDAS));
   const [trasladosPadres, setTrasladosPadres] = useState(() => getInitialState('trasladosPadres', TRASLADOS_PADRES_PREDEFINIDOS));
+  const [medicacionPadres, setMedicacionPadres] = useState(() => getInitialState('medicacionPadres', MEDICACION_PREDEFINIDA));
+  const [historialMedico, setHistorialMedico] = useState(() => getInitialState('historialMedico', HISTORIAL_MEDICO_PREDEFINIDO));
+  const [contactosEmergencia, setContactosEmergencia] = useState(() => getInitialState('contactosEmergencia', CONTACTOS_EMERGENCIA_PREDEFINIDOS));
+  const [subTabSalud, setSubTabSalud] = useState('citas');
+  const [filtroPacienteMedicacion, setFiltroPacienteMedicacion] = useState('todos');
+  const [filtroPacienteHistorial, setFiltroPacienteHistorial] = useState('todos');
+  const [busquedaHistorial, setBusquedaHistorial] = useState('');
   const [ubicacionActualPadres, setUbicacionActualPadres] = useState(() => {
     return localStorage.getItem('family_app_ubicacion_padres') || 'Alcalá (Esgaravita)';
   });
@@ -867,6 +1034,34 @@ export default function App() {
     mismoConductorVuelta: true,
     notas: '',
     estado: 'pendiente'
+  });
+
+  // --- ESTADOS DE MEDICACIÓN / PASTILLERO ---
+  const [showMedicamentoModal, setShowMedicamentoModal] = useState(false);
+  const [isEditingMedicamento, setIsEditingMedicamento] = useState(false);
+  const [editingMedicamentoId, setEditingMedicamentoId] = useState(null);
+  const [newMedicamento, setNewMedicamento] = useState({
+    paciente: 'Mamá (Encarnación)',
+    nombre: '',
+    dosis: '',
+    momento: 'Desayuno',
+    indicaciones: '',
+    activo: true
+  });
+
+  // --- ESTADOS DE HISTORIAL MÉDICO & INFORMES ---
+  const [showHistorialModal, setShowHistorialModal] = useState(false);
+  const [isEditingHistorial, setIsEditingHistorial] = useState(false);
+  const [editingHistorialId, setEditingHistorialId] = useState(null);
+  const [newHistorial, setNewHistorial] = useState({
+    fecha: '',
+    paciente: 'Mamá (Encarnación)',
+    especialidad: '',
+    medico: '',
+    centro: 'Fundación Jiménez Díaz',
+    acompano: '',
+    notasMedicas: '',
+    proximaRevision: ''
   });
 
   // --- ESTADOS DE TRASLADOS DE LOS PADRES ---
@@ -1446,6 +1641,9 @@ export default function App() {
       setIdeas(getInitialState('ideas', seedIdeas));
       setCitasMedicas(getInitialState('citasMedicas', CITAS_MEDICAS_PREDEFINIDAS));
       setTrasladosPadres(getInitialState('trasladosPadres', TRASLADOS_PADRES_PREDEFINIDOS));
+      setMedicacionPadres(getInitialState('medicacionPadres', MEDICACION_PREDEFINIDA));
+      setHistorialMedico(getInitialState('historialMedico', HISTORIAL_MEDICO_PREDEFINIDO));
+      setContactosEmergencia(getInitialState('contactosEmergencia', CONTACTOS_EMERGENCIA_PREDEFINIDOS));
       setLoading(false);
       return;
     }
@@ -1459,6 +1657,8 @@ export default function App() {
     const colIdeas = collection(db, 'artifacts', appId, 'public', 'data', 'ideas');
     const colCitasMedicas = collection(db, 'artifacts', appId, 'public', 'data', 'citasMedicas');
     const colTrasladosPadres = collection(db, 'artifacts', appId, 'public', 'data', 'trasladosPadres');
+    const colMedicacionPadres = collection(db, 'artifacts', appId, 'public', 'data', 'medicacionPadres');
+    const colHistorialMedico = collection(db, 'artifacts', appId, 'public', 'data', 'historialMedico');
     const docUbicacion = doc(db, 'artifacts', appId, 'public', 'config_ubicacion_padres');
 
     const sembrarDatosSiVacios = async () => {
@@ -1521,6 +1721,21 @@ export default function App() {
           }
 
           await setDoc(docUbicacion, { ubicacion: 'Alcalá (Esgaravita)', actualizadoPor: 'Sistema' }, { merge: true });
+        }
+
+        // Sembrar Medicación e Historial Médico si aún no existen en Firestore
+        const snapMedicacion = await getDocs(colMedicacionPadres);
+        if (snapMedicacion.empty) {
+          for (const med of MEDICACION_PREDEFINIDA) {
+            await addDoc(colMedicacionPadres, med);
+          }
+        }
+
+        const snapHistorial = await getDocs(colHistorialMedico);
+        if (snapHistorial.empty) {
+          for (const hist of HISTORIAL_MEDICO_PREDEFINIDO) {
+            await addDoc(colHistorialMedico, hist);
+          }
         }
       } catch (err) {
         console.error("Error sembrando datos:", err);
@@ -1595,6 +1810,20 @@ export default function App() {
       console.warn("Error snapshot ubicación padres:", err);
     });
 
+    const unsubMedicacion = onSnapshot(colMedicacionPadres, (snapshot) => {
+      setMedicacionPadres(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => {
+      console.error("Error al suscribirse a medicacionPadres:", err);
+      setMedicacionPadres(getInitialState('medicacionPadres', MEDICACION_PREDEFINIDA));
+    });
+
+    const unsubHistorial = onSnapshot(colHistorialMedico, (snapshot) => {
+      setHistorialMedico(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => {
+      console.error("Error al suscribirse a historialMedico:", err);
+      setHistorialMedico(getInitialState('historialMedico', HISTORIAL_MEDICO_PREDEFINIDO));
+    });
+
     return () => {
       unsubMiembros();
       unsubVacaciones();
@@ -1604,6 +1833,8 @@ export default function App() {
       unsubCitasMedicas();
       unsubTraslados();
       unsubUbicacion();
+      unsubMedicacion();
+      unsubHistorial();
     };
   }, [user]);
 
@@ -3091,7 +3322,7 @@ export default function App() {
         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'citasMedicas', cita.id), {
           estado: nuevoEstado
         });
-        triggerToast(nuevoEstado === 'completada' ? '✅ Cita marcada como completada' : '⏳ Cita reabierta como pendiente');
+        triggerToast(nuevoEstado === 'completada' ? '✅ Cita completada. ¡Apunta las conclusiones en el historial!' : '⏳ Cita reabierta como pendiente');
       } catch (err) {
         console.error(err);
       }
@@ -3099,7 +3330,260 @@ export default function App() {
       const updated = citasMedicas.map(c => c.id === cita.id ? { ...c, estado: nuevoEstado } : c);
       setCitasMedicas(updated);
       persistLocal('citasMedicas', updated);
-      triggerToast(nuevoEstado === 'completada' ? '✅ Cita marcada como completada' : '⏳ Cita reabierta como pendiente');
+      triggerToast(nuevoEstado === 'completada' ? '✅ Cita completada. ¡Apunta las conclusiones en el historial!' : '⏳ Cita reabierta como pendiente');
+    }
+
+    // Si se acaba de marcar como completada, sugerir añadir informe al Historial Médico
+    if (nuevoEstado === 'completada') {
+      const acomp = (cita.quienLleva && cita.quienLleva !== 'Pendiente de asignar')
+        ? (cita.quienLleva === cita.quienRecoge ? cita.quienLleva : `${cita.quienLleva} / ${cita.quienRecoge}`)
+        : (cita.acompanante !== 'Pendiente de asignar' ? cita.acompanante : (usuarioActivo || ''));
+      
+      setNewHistorial({
+        fecha: cita.fecha || getFechaHoyLocal(new Date()),
+        paciente: cita.paciente || 'Mamá (Encarnación)',
+        especialidad: cita.especialidad || '',
+        medico: cita.medico || '',
+        centro: cita.centro || '',
+        acompano: acomp,
+        notasMedicas: cita.notas ? `Notas previas de la cita:\n${cita.notas}\n\nConclusiones y diagnóstico médico:` : '',
+        proximaRevision: ''
+      });
+      setIsEditingHistorial(false);
+      setEditingHistorialId(null);
+      setShowHistorialModal(true);
+    }
+  };
+
+  // --- GESTIÓN DE MEDICACIÓN / PASTILLERO ---
+  const resetMedicamentoForm = () => {
+    setNewMedicamento({
+      paciente: 'Mamá (Encarnación)',
+      nombre: '',
+      dosis: '',
+      momento: 'Desayuno',
+      indicaciones: '',
+      activo: true
+    });
+    setIsEditingMedicamento(false);
+    setEditingMedicamentoId(null);
+    setShowMedicamentoModal(false);
+  };
+
+  const startEditMedicamento = (med) => {
+    if (!med) return;
+    setNewMedicamento({
+      paciente: med.paciente || 'Mamá (Encarnación)',
+      nombre: med.nombre || '',
+      dosis: med.dosis || '',
+      momento: med.momento || 'Desayuno',
+      indicaciones: med.indicaciones || '',
+      activo: med.activo !== false
+    });
+    setEditingMedicamentoId(med.id);
+    setIsEditingMedicamento(true);
+    setShowMedicamentoModal(true);
+  };
+
+  const handleSaveMedicamento = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!newMedicamento.nombre.trim()) {
+      alert('Por favor indica el nombre del fármaco o tratamiento.');
+      return;
+    }
+
+    const medData = {
+      paciente: newMedicamento.paciente,
+      nombre: newMedicamento.nombre.trim(),
+      dosis: newMedicamento.dosis.trim(),
+      momento: newMedicamento.momento,
+      indicaciones: newMedicamento.indicaciones.trim(),
+      activo: newMedicamento.activo !== false
+    };
+
+    const isLocal = typeof editingMedicamentoId === 'string' && editingMedicamentoId.startsWith('med_');
+
+    if (isCloudMode && user && !isLocalMode && (!isEditingMedicamento || !isLocal)) {
+      try {
+        if (isEditingMedicamento) {
+          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'medicacionPadres', editingMedicamentoId), medData);
+          triggerToast('💊 Medicamento actualizado en la nube');
+        } else {
+          await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'medicacionPadres'), {
+            ...medData,
+            creadoPor: usuarioActivo,
+            creadoEl: new Date().toISOString()
+          });
+          triggerToast('💊 Medicamento añadido al pastillero');
+        }
+        resetMedicamentoForm();
+      } catch (err) {
+        console.error(err);
+        triggerToast(`Error al guardar medicamento: ${err.message}`);
+      }
+    } else {
+      if (isEditingMedicamento) {
+        const updated = medicacionPadres.map(m => m.id === editingMedicamentoId ? { ...m, ...medData } : m);
+        setMedicacionPadres(updated);
+        persistLocal('medicacionPadres', updated);
+        triggerToast('💊 Medicamento actualizado');
+      } else {
+        const updated = [...medicacionPadres, { id: 'med_' + Date.now(), ...medData, creadoEl: new Date().toISOString() }];
+        setMedicacionPadres(updated);
+        persistLocal('medicacionPadres', updated);
+        triggerToast('💊 Medicamento añadido al pastillero');
+      }
+      resetMedicamentoForm();
+    }
+  };
+
+  const handleDeleteMedicamento = async (medId) => {
+    if (!confirm('¿Seguro que deseas eliminar este medicamento de la pauta?')) return;
+    const isLocal = typeof medId === 'string' && medId.startsWith('med_');
+    if (isCloudMode && user && !isLocalMode && !isLocal) {
+      try {
+        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'medicacionPadres', medId));
+        triggerToast('🗑️ Medicamento eliminado de la pauta');
+      } catch (err) {
+        console.error(err);
+        triggerToast(`Error: ${err.message}`);
+      }
+    } else {
+      const updated = medicacionPadres.filter(m => m.id !== medId);
+      setMedicacionPadres(updated);
+      persistLocal('medicacionPadres', updated);
+      triggerToast('🗑️ Medicamento eliminado');
+    }
+  };
+
+  const handleToggleMedicamentoActivo = async (med) => {
+    const nuevoActivo = med.activo === false ? true : false;
+    const isLocal = typeof med.id === 'string' && med.id.startsWith('med_');
+    if (isCloudMode && user && !isLocalMode && !isLocal) {
+      try {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'medicacionPadres', med.id), {
+          activo: nuevoActivo
+        });
+        triggerToast(nuevoActivo ? '🟢 Medicamento activado' : '⏸️ Medicamento pausado temporalmente');
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      const updated = medicacionPadres.map(m => m.id === med.id ? { ...m, activo: nuevoActivo } : m);
+      setMedicacionPadres(updated);
+      persistLocal('medicacionPadres', updated);
+      triggerToast(nuevoActivo ? '🟢 Medicamento activado' : '⏸️ Medicamento pausado');
+    }
+  };
+
+  // --- GESTIÓN DE HISTORIAL MÉDICO & INFORMES ---
+  const resetHistorialForm = () => {
+    setNewHistorial({
+      fecha: getFechaHoyLocal(new Date()),
+      paciente: 'Mamá (Encarnación)',
+      especialidad: '',
+      medico: '',
+      centro: 'Fundación Jiménez Díaz',
+      acompano: usuarioActivo || '',
+      notasMedicas: '',
+      proximaRevision: ''
+    });
+    setIsEditingHistorial(false);
+    setEditingHistorialId(null);
+    setShowHistorialModal(false);
+  };
+
+  const startEditHistorial = (hist) => {
+    if (!hist) return;
+    setNewHistorial({
+      fecha: hist.fecha || '',
+      paciente: hist.paciente || 'Mamá (Encarnación)',
+      especialidad: hist.especialidad || '',
+      medico: hist.medico || '',
+      centro: hist.centro || '',
+      acompano: hist.acompano || '',
+      notasMedicas: hist.notasMedicas || '',
+      proximaRevision: hist.proximaRevision || ''
+    });
+    setEditingHistorialId(hist.id);
+    setIsEditingHistorial(true);
+    setShowHistorialModal(true);
+  };
+
+  const handleSaveHistorial = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!newHistorial.fecha) {
+      alert('Por favor indica la fecha de la consulta o informe.');
+      return;
+    }
+    if (!newHistorial.especialidad.trim()) {
+      alert('Por favor indica la especialidad o motivo de consulta.');
+      return;
+    }
+
+    const histData = {
+      fecha: newHistorial.fecha,
+      paciente: newHistorial.paciente,
+      especialidad: newHistorial.especialidad.trim(),
+      medico: newHistorial.medico.trim(),
+      centro: newHistorial.centro.trim(),
+      acompano: newHistorial.acompano.trim(),
+      notasMedicas: newHistorial.notasMedicas.trim(),
+      proximaRevision: newHistorial.proximaRevision.trim()
+    };
+
+    const isLocal = typeof editingHistorialId === 'string' && editingHistorialId.startsWith('hist_');
+
+    if (isCloudMode && user && !isLocalMode && (!isEditingHistorial || !isLocal)) {
+      try {
+        if (isEditingHistorial) {
+          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'historialMedico', editingHistorialId), histData);
+          triggerToast('📋 Informe médico actualizado');
+        } else {
+          await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'historialMedico'), {
+            ...histData,
+            registradoPor: usuarioActivo,
+            creadoEl: new Date().toISOString()
+          });
+          triggerToast('📋 Informe médico registrado con éxito');
+        }
+        resetHistorialForm();
+      } catch (err) {
+        console.error(err);
+        triggerToast(`Error al guardar informe: ${err.message}`);
+      }
+    } else {
+      if (isEditingHistorial) {
+        const updated = historialMedico.map(h => h.id === editingHistorialId ? { ...h, ...histData } : h);
+        setHistorialMedico(updated);
+        persistLocal('historialMedico', updated);
+        triggerToast('📋 Informe médico actualizado');
+      } else {
+        const updated = [...historialMedico, { id: 'hist_' + Date.now(), ...histData, creadoEl: new Date().toISOString() }];
+        setHistorialMedico(updated);
+        persistLocal('historialMedico', updated);
+        triggerToast('📋 Informe médico registrado');
+      }
+      resetHistorialForm();
+    }
+  };
+
+  const handleDeleteHistorial = async (histId) => {
+    if (!confirm('¿Seguro que deseas eliminar este informe del historial médico?')) return;
+    const isLocal = typeof histId === 'string' && histId.startsWith('hist_');
+    if (isCloudMode && user && !isLocalMode && !isLocal) {
+      try {
+        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'historialMedico', histId));
+        triggerToast('🗑️ Informe médico eliminado');
+      } catch (err) {
+        console.error(err);
+        triggerToast(`Error: ${err.message}`);
+      }
+    } else {
+      const updated = historialMedico.filter(h => h.id !== histId);
+      setHistorialMedico(updated);
+      persistLocal('historialMedico', updated);
+      triggerToast('🗑️ Informe médico eliminado');
     }
   };
 
@@ -5135,7 +5619,7 @@ export default function App() {
               {[
                 { id: 'inicio', label: 'Inicio', icon: Home },
                 { id: 'traslados', label: 'Padres (Alcalá/Madrid)', icon: Car },
-                { id: 'citas', label: 'Citas Médicas', icon: Activity },
+                { id: 'citas', label: 'Salud y Cuidados', icon: Activity },
                 { id: 'arbol', label: 'Árbol Genealógico', icon: Users },
                 { id: 'calendario', label: 'Calendario Visual', icon: CalendarIcon },
                 { id: 'vacaciones', label: 'Vacaciones Verano', icon: Sun },
@@ -6365,56 +6849,145 @@ export default function App() {
                 {activeTab === 'citas' && (
                   <div className="space-y-6 animate-fadeIn">
                     
-                    {/* Cabecera del Módulo */}
+                    {/* Cabecera del Módulo de Salud */}
                     <div className="bg-white p-6 rounded-3xl border border-slate-150 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                       <div>
                         <div className="flex items-center gap-2">
                           <div className="p-2 bg-rose-100 rounded-2xl text-rose-600">
-                            <Activity className="w-6 h-6" />
+                            {subTabSalud === 'citas' && <Activity className="w-6 h-6" />}
+                            {subTabSalud === 'pastillero' && <Pill className="w-6 h-6" />}
+                            {subTabSalud === 'historial' && <ClipboardList className="w-6 h-6" />}
+                            {subTabSalud === 'emergencias' && <PhoneCall className="w-6 h-6" />}
                           </div>
                           <h2 className="text-xl md:text-2xl font-black text-slate-800">
-                            Citas Médicas y Revisiones de los Padres 🩺
+                            {subTabSalud === 'citas' && 'Citas Médicas y Revisiones de los Padres 🩺'}
+                            {subTabSalud === 'pastillero' && 'Pastillero y Pautas de Medicación 💊'}
+                            {subTabSalud === 'historial' && 'Historial Clínico y Conclusiones de Consultas 📋'}
+                            {subTabSalud === 'emergencias' && 'Contactos Médicos y Urgencias Sanitarias 🚨'}
                           </h2>
                         </div>
                         <p className="text-slate-500 text-xs md:text-sm mt-1 max-w-2xl">
-                          Coordinación entre los 7 hermanos para las revisiones de <strong>Encarnación (Mamá)</strong> y <strong>Jaime (Papá)</strong>. Consulta especialistas, centros y quién les acompaña a cada cita.
+                          {subTabSalud === 'citas' && (
+                            <>Coordinación entre los 7 hermanos para las revisiones de <strong>Encarnación (Mamá)</strong> y <strong>Jaime (Papá)</strong>. Consulta especialistas, centros y quién les acompaña a cada cita.</>
+                          )}
+                          {subTabSalud === 'pastillero' && (
+                            <>Horarios, tomas y pautas para <strong>Mamá</strong> y <strong>Papá</strong> organizadas por momentos del día: desayuno, comida, cena y noche.</>
+                          )}
+                          {subTabSalud === 'historial' && (
+                            <>Registro acumulativo permanente de diagnósticos médicos, cambios de fármacos e indicaciones para no perder la información al pasar las citas.</>
+                          )}
+                          {subTabSalud === 'emergencias' && (
+                            <>Llamadas directas de urgencia, centros de referencia (FJD y Juan de Austria), farmacias 24h y teléfono de casa en la finca.</>
+                          )}
                         </p>
                       </div>
 
                       <div className="flex items-center gap-2 flex-wrap">
-                        <label className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl flex items-center gap-1.5 transition-all shadow-md cursor-pointer shrink-0">
-                          <Camera className="w-4 h-4" /> <span>📷 Añadir por Foto</span>
-                          <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFotoCitaSeleccionada} />
-                        </label>
-                        <button
-                          onClick={() => ejecutarLimpiezaPasados(citasMedicas, trasladosPadres, true)}
-                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-2.5 px-3 rounded-xl flex items-center gap-1.5 transition-all border border-slate-200"
-                          title="Limpiar automáticamente citas y traslados de días anteriores"
-                        >
-                          <span>🧹</span> Limpiar Pasadas
-                        </button>
-                        <button
-                          onClick={() => handleDownloadPDF('citas')}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl flex items-center gap-1.5 transition-all shadow-md"
-                          title="Descargar agenda de citas médicas en PDF"
-                        >
-                          <Download className="w-4 h-4" /> <span>PDF</span>
-                        </button>
-                        <button
-                          onClick={handleEnviarResumenCitasTelegram}
-                          className="bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl flex items-center gap-1.5 transition-all shadow-md"
-                          title="Enviar lista de próximas citas al grupo de Telegram (Laos)"
-                        >
-                          <span>✈️</span> Avisar en Telegram
-                        </button>
-                        <button
-                          onClick={() => { resetCitaForm(); setShowCitaModal(true); }}
-                          className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center gap-1.5 transition-all shadow-md shrink-0"
-                        >
-                          <Plus className="w-4 h-4" /> Nueva Cita
-                        </button>
+                        {subTabSalud === 'citas' && (
+                          <>
+                            <label className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl flex items-center gap-1.5 transition-all shadow-md cursor-pointer shrink-0">
+                              <Camera className="w-4 h-4" /> <span>📷 Añadir por Foto</span>
+                              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFotoCitaSeleccionada} />
+                            </label>
+                            <button
+                              onClick={() => ejecutarLimpiezaPasados(citasMedicas, trasladosPadres, true)}
+                              className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-2.5 px-3 rounded-xl flex items-center gap-1.5 transition-all border border-slate-200"
+                              title="Limpiar automáticamente citas y traslados de días anteriores"
+                            >
+                              <span>🧹</span> Limpiar Pasadas
+                            </button>
+                            <button
+                              onClick={() => handleDownloadPDF('citas')}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl flex items-center gap-1.5 transition-all shadow-md"
+                              title="Descargar agenda de citas médicas en PDF"
+                            >
+                              <Download className="w-4 h-4" /> <span>PDF</span>
+                            </button>
+                            <button
+                              onClick={handleEnviarResumenCitasTelegram}
+                              className="bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl flex items-center gap-1.5 transition-all shadow-md"
+                              title="Enviar lista de próximas citas al grupo de Telegram (Laos)"
+                            >
+                              <span>✈️</span> Avisar en Telegram
+                            </button>
+                            <button
+                              onClick={() => { resetCitaForm(); setShowCitaModal(true); }}
+                              className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center gap-1.5 transition-all shadow-md shrink-0"
+                            >
+                              <Plus className="w-4 h-4" /> Nueva Cita
+                            </button>
+                          </>
+                        )}
+                        {subTabSalud === 'pastillero' && (
+                          <button
+                            onClick={() => { resetMedicamentoForm(); setShowMedicamentoModal(true); }}
+                            className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center gap-1.5 transition-all shadow-md shrink-0"
+                          >
+                            <Plus className="w-4 h-4" /> Añadir Fármaco
+                          </button>
+                        )}
+                        {subTabSalud === 'historial' && (
+                          <button
+                            onClick={() => { resetHistorialForm(); setShowHistorialModal(true); }}
+                            className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center gap-1.5 transition-all shadow-md shrink-0"
+                          >
+                            <Plus className="w-4 h-4" /> Registrar Informe
+                          </button>
+                        )}
                       </div>
                     </div>
+
+                    {/* Selector de Sub-pestañas de Salud */}
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+                      <button
+                        onClick={() => setSubTabSalud('citas')}
+                        className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs md:text-sm font-black transition-all shadow-xs shrink-0 ${
+                          subTabSalud === 'citas'
+                            ? 'bg-rose-600 text-white shadow-rose-200'
+                            : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+                        }`}
+                      >
+                        <Activity className="w-4 h-4" />
+                        <span>🩺 Citas Médicas ({citasMedicas.filter(c => c.estado !== 'completada').length})</span>
+                      </button>
+                      <button
+                        onClick={() => setSubTabSalud('pastillero')}
+                        className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs md:text-sm font-black transition-all shadow-xs shrink-0 ${
+                          subTabSalud === 'pastillero'
+                            ? 'bg-rose-600 text-white shadow-rose-200'
+                            : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+                        }`}
+                      >
+                        <Pill className="w-4 h-4" />
+                        <span>💊 Pastillero & Pautas ({medicacionPadres.filter(m => m.activo !== false).length})</span>
+                      </button>
+                      <button
+                        onClick={() => setSubTabSalud('historial')}
+                        className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs md:text-sm font-black transition-all shadow-xs shrink-0 ${
+                          subTabSalud === 'historial'
+                            ? 'bg-rose-600 text-white shadow-rose-200'
+                            : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+                        }`}
+                      >
+                        <ClipboardList className="w-4 h-4" />
+                        <span>📋 Historial Clínico ({historialMedico.length})</span>
+                      </button>
+                      <button
+                        onClick={() => setSubTabSalud('emergencias')}
+                        className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs md:text-sm font-black transition-all shadow-xs shrink-0 ${
+                          subTabSalud === 'emergencias'
+                            ? 'bg-rose-600 text-white shadow-rose-200'
+                            : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+                        }`}
+                      >
+                        <PhoneCall className="w-4 h-4" />
+                        <span>🚨 Contactos & Urgencias ({contactosEmergencia.length})</span>
+                      </button>
+                    </div>
+
+                    {/* SUB-PESTAÑA 1: CITAS MÉDICAS */}
+                    {subTabSalud === 'citas' && (
+                      <div className="space-y-6">
 
                     {/* Barra de Filtros y Estadísticas */}
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-2xl border border-slate-150 shadow-xs">
@@ -6779,6 +7352,420 @@ export default function App() {
                         </div>
                       );
                     })()}
+                      </div>
+                    )}
+
+                    {/* SUB-PESTAÑA 2: PASTILLERO & MEDICACIÓN */}
+                    {subTabSalud === 'pastillero' && (
+                      <div className="space-y-6">
+                        {/* Filtro por paciente */}
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-2xl border border-slate-150 shadow-xs">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-bold text-slate-500 mr-1">Paciente:</span>
+                            {[
+                              { id: 'todos', label: 'Todos' },
+                              { id: 'mama', label: '👵 Mamá (Encarnación)' },
+                              { id: 'papa', label: '👴 Papá (Jaime)' }
+                            ].map(f => (
+                              <button
+                                key={f.id}
+                                onClick={() => setFiltroPacienteMedicacion(f.id)}
+                                className={`text-xs font-bold px-3 py-1.5 rounded-xl transition ${
+                                  filtroPacienteMedicacion === f.id
+                                    ? 'bg-rose-600 text-white shadow-xs'
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                }`}
+                              >
+                                {f.label}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="text-xs text-slate-500 font-medium">
+                            {medicacionPadres.filter(m => m.activo !== false).length} medicamentos activos en la pauta
+                          </div>
+                        </div>
+
+                        {/* Secciones por Momento del día */}
+                        {['Desayuno', 'Comida', 'Cena', 'Noche', 'Otras tomas / Si precisa'].map(momento => {
+                          const itemsMomento = medicacionPadres.filter(m => {
+                            const matchesMomento = (m.momento || 'Desayuno') === momento;
+                            if (!matchesMomento) return false;
+                            if (filtroPacienteMedicacion === 'mama') return (m.paciente || '').includes('Mamá') || (m.paciente || '').includes('Encarnación');
+                            if (filtroPacienteMedicacion === 'papa') return (m.paciente || '').includes('Papá') || (m.paciente || '').includes('Jaime');
+                            return true;
+                          });
+
+                          if (itemsMomento.length === 0) return null;
+
+                          const iconoMomento = momento === 'Desayuno' ? '🌅' : momento === 'Comida' ? '☀️' : momento === 'Cena' ? '🌙' : momento === 'Noche' ? '💤' : '🕒';
+                          const bgHeader = momento === 'Desayuno' ? 'bg-amber-50 text-amber-900 border-amber-200'
+                            : momento === 'Comida' ? 'bg-orange-50 text-orange-900 border-orange-200'
+                            : momento === 'Cena' ? 'bg-indigo-50 text-indigo-900 border-indigo-200'
+                            : momento === 'Noche' ? 'bg-purple-50 text-purple-900 border-purple-200'
+                            : 'bg-slate-50 text-slate-800 border-slate-200';
+
+                          return (
+                            <div key={momento} className="bg-white rounded-3xl border border-slate-150 p-5 shadow-xs space-y-4">
+                              <div className={`flex items-center justify-between p-3 rounded-2xl border ${bgHeader}`}>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-2xl">{iconoMomento}</span>
+                                  <div>
+                                    <h3 className="font-black text-sm md:text-base capitalize">{momento}</h3>
+                                    <p className="text-[11px] opacity-75 font-medium">
+                                      {momento === 'Desayuno' && 'Tomas de primera hora de la mañana / desayuno'}
+                                      {momento === 'Comida' && 'Tomas de mediodía / almuerzo'}
+                                      {momento === 'Cena' && 'Tomas con la merienda-cena / última comida'}
+                                      {momento === 'Noche' && 'Tomas antes de dormir / al acostarse'}
+                                      {momento === 'Otras tomas / Si precisa' && 'Tratamientos sintomáticos o tomas especiales'}
+                                    </p>
+                                  </div>
+                                </div>
+                                <span className="text-xs font-black px-2.5 py-1 rounded-xl bg-white/80 shadow-3xs">
+                                  {itemsMomento.length} {itemsMomento.length === 1 ? 'fármaco' : 'fármacos'}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                                {itemsMomento.map(med => {
+                                  const esMama = (med.paciente || '').includes('Mamá') || (med.paciente || '').includes('Encarnación');
+                                  const activo = med.activo !== false;
+
+                                  return (
+                                    <div
+                                      key={med.id}
+                                      className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
+                                        !activo
+                                          ? 'bg-slate-50/70 border-slate-200 opacity-60'
+                                          : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs hover:shadow-sm'
+                                      }`}
+                                    >
+                                      <div className="space-y-2">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border ${
+                                            esMama ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-blue-50 text-blue-700 border-blue-200'
+                                          }`}>
+                                            {esMama ? '👵 Mamá' : '👴 Papá'}
+                                          </span>
+                                          <button
+                                            onClick={() => handleToggleMedicamentoActivo(med)}
+                                            className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border transition ${
+                                              activo
+                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                                : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
+                                            }`}
+                                            title={activo ? 'Pausar este fármaco' : 'Reanudar este fármaco'}
+                                          >
+                                            {activo ? '🟢 Activo' : '⏸️ Pausado'}
+                                          </button>
+                                        </div>
+
+                                        <div>
+                                          <h4 className="font-black text-slate-800 text-sm flex items-center gap-1.5">
+                                            <Pill className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                            <span>{med.nombre}</span>
+                                          </h4>
+                                          {med.dosis && (
+                                            <div className="text-xs font-bold text-slate-600 mt-0.5">
+                                              Dosis: <span className="text-rose-600">{med.dosis}</span>
+                                            </div>
+                                          )}
+                                        </div>
+
+                                        {med.indicaciones && (
+                                          <p className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100 italic">
+                                            👉 {med.indicaciones}
+                                          </p>
+                                        )}
+                                      </div>
+
+                                      <div className="flex items-center justify-end gap-1 pt-2 border-t border-slate-100">
+                                        <button
+                                          onClick={() => startEditMedicamento(med)}
+                                          className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+                                          title="Editar medicamento"
+                                        >
+                                          <Edit2 className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                          onClick={() => handleDeleteMedicamento(med.id)}
+                                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                                          title="Eliminar de la pauta"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        <div className="text-center pt-2">
+                          <button
+                            onClick={() => { resetMedicamentoForm(); setShowMedicamentoModal(true); }}
+                            className="inline-flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-5 py-3 rounded-2xl shadow-md transition"
+                          >
+                            <Plus className="w-4 h-4" /> Añadir Medicamento o Suplemento
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* SUB-PESTAÑA 3: HISTORIAL MÉDICO & INFORMES */}
+                    {subTabSalud === 'historial' && (
+                      <div className="space-y-6">
+                        {/* Filtro y Búsqueda */}
+                        <div className="bg-white p-4 rounded-2xl border border-slate-150 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-bold text-slate-500 mr-1">Paciente:</span>
+                            {[
+                              { id: 'todos', label: 'Todos' },
+                              { id: 'mama', label: '👵 Mamá (Encarnación)' },
+                              { id: 'papa', label: '👴 Papá (Jaime)' }
+                            ].map(f => (
+                              <button
+                                key={f.id}
+                                onClick={() => setFiltroPacienteHistorial(f.id)}
+                                className={`text-xs font-bold px-3 py-1.5 rounded-xl transition ${
+                                  filtroPacienteHistorial === f.id
+                                    ? 'bg-rose-600 text-white shadow-xs'
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                }`}
+                              >
+                                {f.label}
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="w-full md:w-72">
+                            <input
+                              type="text"
+                              placeholder="🔍 Buscar diagnóstico, doctor, centro..."
+                              value={busquedaHistorial}
+                              onChange={(e) => setBusquedaHistorial(e.target.value)}
+                              className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Lista cronológica del Historial */}
+                        {(() => {
+                          const filtrados = [...historialMedico]
+                            .filter(h => {
+                              if (filtroPacienteHistorial === 'mama' && !((h.paciente || '').includes('Mamá') || (h.paciente || '').includes('Encarnación'))) return false;
+                              if (filtroPacienteHistorial === 'papa' && !((h.paciente || '').includes('Papá') || (h.paciente || '').includes('Jaime'))) return false;
+                              if (busquedaHistorial.trim()) {
+                                const q = busquedaHistorial.toLowerCase();
+                                const textMatch = `${h.especialidad} ${h.medico} ${h.centro} ${h.notasMedicas} ${h.acompano}`.toLowerCase();
+                                if (!textMatch.includes(q)) return false;
+                              }
+                              return true;
+                            })
+                            .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+
+                          if (filtrados.length === 0) {
+                            return (
+                              <div className="bg-white p-8 rounded-3xl border border-slate-150 text-center space-y-3">
+                                <ClipboardList className="w-12 h-12 text-slate-300 mx-auto" />
+                                <h3 className="font-bold text-slate-700 text-base">No hay informes médicos registrados</h3>
+                                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                                  Al completar cualquier cita médica podrás anotar las conclusiones aquí, o pulsar directamente en registrar informe.
+                                </p>
+                                <button
+                                  onClick={() => { resetHistorialForm(); setShowHistorialModal(true); }}
+                                  className="inline-flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-xs transition"
+                                >
+                                  <Plus className="w-4 h-4" /> Registrar Primer Informe
+                                </button>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="space-y-4">
+                              {filtrados.map(hist => {
+                                const esMama = (hist.paciente || '').includes('Mamá') || (hist.paciente || '').includes('Encarnación');
+                                return (
+                                  <div key={hist.id} className="bg-white rounded-3xl border border-slate-150 p-5 shadow-xs hover:shadow-sm transition-all space-y-3.5">
+                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pb-3 border-b border-slate-100">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-xs font-black text-slate-700 bg-slate-100 px-3 py-1 rounded-xl">
+                                          📅 {hist.fecha ? formatDateSpanish(hist.fecha) : 'Fecha no especificada'}
+                                        </span>
+                                        <span className={`text-xs font-bold px-2.5 py-0.5 rounded-lg border ${
+                                          esMama ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-blue-50 text-blue-700 border-blue-200'
+                                        }`}>
+                                          {esMama ? '👵 Mamá (Encarnación)' : '👴 Papá (Jaime)'}
+                                        </span>
+                                        <span className="font-black text-slate-900 text-sm md:text-base">
+                                          {hist.especialidad}
+                                        </span>
+                                      </div>
+
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          onClick={() => startEditHistorial(hist)}
+                                          className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+                                          title="Editar informe"
+                                        >
+                                          <Edit2 className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                          onClick={() => handleDeleteHistorial(hist.id)}
+                                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                                          title="Eliminar informe"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                                      {hist.medico && (
+                                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                          <span className="text-[10px] text-slate-400 font-bold block uppercase">Médico</span>
+                                          <span className="font-bold text-slate-700">👨‍⚕️ {hist.medico}</span>
+                                        </div>
+                                      )}
+                                      {hist.centro && (
+                                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                          <span className="text-[10px] text-slate-400 font-bold block uppercase">Centro / Hospital</span>
+                                          <span className="font-bold text-slate-700">🏥 {hist.centro}</span>
+                                        </div>
+                                      )}
+                                      {hist.acompano && (
+                                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                          <span className="text-[10px] text-slate-400 font-bold block uppercase">Acompañó</span>
+                                          <span className="font-bold text-slate-700">🤝 {hist.acompano}</span>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {hist.notasMedicas && (
+                                      <div className="bg-rose-50/40 p-3.5 rounded-2xl border border-rose-100 text-xs text-slate-700 space-y-1">
+                                        <span className="text-[10px] font-black text-rose-700 uppercase tracking-wider block">
+                                          📝 Conclusiones, Indicaciones y Tratamiento:
+                                        </span>
+                                        <p className="whitespace-pre-wrap leading-relaxed">{hist.notasMedicas}</p>
+                                      </div>
+                                    )}
+
+                                    {hist.proximaRevision && (
+                                      <div className="flex items-center justify-between bg-amber-50 p-3 rounded-2xl border border-amber-200 text-xs text-amber-900 flex-wrap gap-2">
+                                        <div className="flex items-center gap-1.5">
+                                          <span>🔔</span>
+                                          <span><strong>Próxima revisión:</strong> {hist.proximaRevision}</span>
+                                        </div>
+                                        <button
+                                          onClick={() => {
+                                            resetCitaForm();
+                                            setNewCita(prev => ({
+                                              ...prev,
+                                              paciente: hist.paciente,
+                                              especialidad: hist.especialidad,
+                                              medico: hist.medico,
+                                              centro: hist.centro,
+                                              notas: `Programada desde informe médico del ${hist.fecha}. Recomendación: ${hist.proximaRevision}`
+                                            }));
+                                            setSubTabSalud('citas');
+                                            setShowCitaModal(true);
+                                          }}
+                                          className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] px-3 py-1.5 rounded-xl transition shadow-3xs"
+                                        >
+                                          ➕ Programar en Citas
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {/* SUB-PESTAÑA 4: CONTACTOS & EMERGENCIAS */}
+                    {subTabSalud === 'emergencias' && (
+                      <div className="space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {contactosEmergencia.map(contacto => {
+                            const isEmergency112 = contacto.telefono === '112';
+                            return (
+                              <div
+                                key={contacto.id}
+                                className={`p-5 rounded-3xl border transition-all flex flex-col justify-between gap-4 ${
+                                  isEmergency112
+                                    ? 'bg-rose-500 text-white border-rose-600 shadow-md'
+                                    : 'bg-white border-slate-150 shadow-xs hover:shadow-sm'
+                                }`}
+                              >
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-3xl">{contacto.icono}</span>
+                                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-xl uppercase ${
+                                      isEmergency112
+                                        ? 'bg-white text-rose-600'
+                                        : 'bg-slate-100 text-slate-700'
+                                    }`}>
+                                      {contacto.badge}
+                                    </span>
+                                  </div>
+
+                                  <div>
+                                    <h3 className={`font-black text-base md:text-lg ${isEmergency112 ? 'text-white' : 'text-slate-800'}`}>
+                                      {contacto.nombre}
+                                    </h3>
+                                    <p className={`text-xs ${isEmergency112 ? 'text-rose-100' : 'text-slate-500'}`}>
+                                      {contacto.subtitulo}
+                                    </p>
+                                  </div>
+
+                                  {contacto.direccion && (
+                                    <p className={`text-xs ${isEmergency112 ? 'text-rose-100' : 'text-slate-600'} flex items-start gap-1 mt-1`}>
+                                      <span>📍</span> <span>{contacto.direccion}</span>
+                                    </p>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-2 pt-2 flex-wrap">
+                                  <a
+                                    href={`tel:${contacto.telefono.replace(/\s+/g, '')}`}
+                                    className={`flex-1 min-w-[140px] text-center font-black text-xs py-3 px-4 rounded-2xl shadow-sm transition flex items-center justify-center gap-2 ${
+                                      isEmergency112
+                                        ? 'bg-white text-rose-600 hover:bg-rose-50 font-black text-sm'
+                                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                    }`}
+                                  >
+                                    <Phone className="w-4 h-4" />
+                                    <span>Llamar: {contacto.telefono}</span>
+                                  </a>
+
+                                  {contacto.mapsUrl && (
+                                    <a
+                                      href={contacto.mapsUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className={`text-xs font-bold py-3 px-3.5 rounded-2xl transition flex items-center gap-1.5 ${
+                                        isEmergency112
+                                          ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                                      }`}
+                                      title="Abrir en Google Maps"
+                                    >
+                                      <MapPin className="w-4 h-4" />
+                                      <span>Cómo llegar</span>
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -8252,7 +9239,275 @@ export default function App() {
             </div>
           )}
 
-          {/* 6. Modal de Citas Médicas */}
+          {/* 6. Modal de Medicación / Pastillero */}
+          {showMedicamentoModal && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-fadeIn overflow-y-auto">
+              <div className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-slate-100 my-4">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="p-2 bg-rose-100 text-rose-600 rounded-2xl text-lg">💊</span>
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-base">
+                        {isEditingMedicamento ? 'Editar Medicamento' : 'Añadir Fármaco o Pauta'}
+                      </h3>
+                      <p className="text-[10px] text-slate-400">
+                        Registra dosis, momento del día e instrucciones
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={resetMedicamentoForm}
+                    className="text-slate-400 hover:text-slate-600 font-bold p-1 text-base transition"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveMedicamento} className="space-y-3.5 text-xs">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Paciente</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {['Mamá (Encarnación)', 'Papá (Jaime)'].map(pac => (
+                        <button
+                          type="button"
+                          key={pac}
+                          onClick={() => setNewMedicamento(prev => ({ ...prev, paciente: pac }))}
+                          className={`py-2 px-3 rounded-xl border text-xs font-bold transition ${
+                            newMedicamento.paciente === pac
+                              ? 'bg-rose-50 border-rose-300 text-rose-700'
+                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          {pac.includes('Mamá') ? '👵 Mamá' : '👴 Papá'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Nombre del Medicamento *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ej: Omeprazol, Sintrom, Enalapril..."
+                      value={newMedicamento.nombre}
+                      onChange={(e) => setNewMedicamento(prev => ({ ...prev, nombre: e.target.value }))}
+                      className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Dosis / Cantidad</label>
+                      <input
+                        type="text"
+                        placeholder="Ej: 20 mg, 1 comprimido..."
+                        value={newMedicamento.dosis}
+                        onChange={(e) => setNewMedicamento(prev => ({ ...prev, dosis: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Momento de la toma</label>
+                      <select
+                        value={newMedicamento.momento}
+                        onChange={(e) => setNewMedicamento(prev => ({ ...prev, momento: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500 bg-white"
+                      >
+                        <option value="Desayuno">🌅 Desayuno</option>
+                        <option value="Comida">☀️ Comida</option>
+                        <option value="Cena">🌙 Cena</option>
+                        <option value="Noche">💤 Noche</option>
+                        <option value="Otras tomas / Si precisa">🕒 Otras tomas</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Instrucciones o Advertencias</label>
+                    <textarea
+                      rows="2"
+                      placeholder="Ej: Tomar en ayunas 20 min antes del desayuno con un vaso de agua..."
+                      value={newMedicamento.indicaciones}
+                      onChange={(e) => setNewMedicamento(prev => ({ ...prev, indicaciones: e.target.value }))}
+                      className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="checkbox"
+                      id="med_activo"
+                      checked={newMedicamento.activo}
+                      onChange={(e) => setNewMedicamento(prev => ({ ...prev, activo: e.target.checked }))}
+                      className="rounded border-slate-300 text-rose-600 focus:ring-rose-500 w-4 h-4"
+                    />
+                    <label htmlFor="med_activo" className="text-xs text-slate-700 font-semibold cursor-pointer">
+                      Pauta activa actualmente
+                    </label>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={resetMedicamentoForm}
+                      className="px-4 py-2 rounded-xl text-slate-500 hover:bg-slate-100 font-bold transition"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold transition shadow-sm"
+                    >
+                      {isEditingMedicamento ? 'Guardar Cambios' : 'Añadir al Pastillero'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* 7. Modal de Historial Médico & Informes */}
+          {showHistorialModal && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-start justify-center p-3 sm:p-4 z-50 animate-fadeIn overflow-y-auto">
+              <div className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-slate-100 my-4 sm:my-8">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="p-2 bg-rose-100 text-rose-600 rounded-2xl text-lg">📋</span>
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-base">
+                        {isEditingHistorial ? 'Editar Informe Médico' : 'Registrar Informe / Conclusiones de Consulta'}
+                      </h3>
+                      <p className="text-[10px] text-slate-400">
+                        Guarda de forma permanente lo que dijo el médico, cambios de fármacos o diagnósticos
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={resetHistorialForm}
+                    className="text-slate-400 hover:text-slate-600 font-bold p-1 text-base transition"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveHistorial} className="space-y-3.5 text-xs">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Fecha de la Consulta *</label>
+                      <input
+                        type="date"
+                        required
+                        value={newHistorial.fecha}
+                        onChange={(e) => setNewHistorial(prev => ({ ...prev, fecha: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Paciente *</label>
+                      <select
+                        value={newHistorial.paciente}
+                        onChange={(e) => setNewHistorial(prev => ({ ...prev, paciente: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500 bg-white"
+                      >
+                        <option value="Mamá (Encarnación)">👵 Mamá (Encarnación)</option>
+                        <option value="Papá (Jaime)">👴 Papá (Jaime)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Especialidad / Motivo *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej: Cardiología, Traumatología, Analítica..."
+                        value={newHistorial.especialidad}
+                        onChange={(e) => setNewHistorial(prev => ({ ...prev, especialidad: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Médico Especialista</label>
+                      <input
+                        type="text"
+                        placeholder="Ej: Dr. Gómez"
+                        value={newHistorial.medico}
+                        onChange={(e) => setNewHistorial(prev => ({ ...prev, medico: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Hospital / Centro</label>
+                      <input
+                        type="text"
+                        placeholder="Ej: Fundación Jiménez Díaz"
+                        value={newHistorial.centro}
+                        onChange={(e) => setNewHistorial(prev => ({ ...prev, centro: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">¿Quién acompañó?</label>
+                      <input
+                        type="text"
+                        placeholder="Ej: Isaac, Rebeca..."
+                        value={newHistorial.acompano}
+                        onChange={(e) => setNewHistorial(prev => ({ ...prev, acompano: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      Conclusiones, Tratamiento, Cambios y Diagnóstico
+                    </label>
+                    <textarea
+                      rows="4"
+                      placeholder="Anota aquí todo lo que explicó el médico, pautas de medicamentos nuevos, resultados de pruebas..."
+                      value={newHistorial.notasMedicas}
+                      onChange={(e) => setNewHistorial(prev => ({ ...prev, notasMedicas: e.target.value }))}
+                      className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500 leading-relaxed"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Próxima Revisión Recomendada</label>
+                    <input
+                      type="text"
+                      placeholder="Ej: En 6 meses (Diciembre 2026) con nueva analítica"
+                      value={newHistorial.proximaRevision}
+                      onChange={(e) => setNewHistorial(prev => ({ ...prev, proximaRevision: e.target.value }))}
+                      className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={resetHistorialForm}
+                      className="px-4 py-2 rounded-xl text-slate-500 hover:bg-slate-100 font-bold transition"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold transition shadow-sm"
+                    >
+                      {isEditingHistorial ? 'Guardar Cambios' : 'Guardar en Historial'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* 8. Modal de Citas Médicas */}
           {showCitaModal && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-start justify-center p-3 sm:p-4 z-50 animate-fadeIn overflow-y-auto">
               <div className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-slate-100 my-4 sm:my-8">
@@ -9648,7 +10903,7 @@ export default function App() {
             {[
               { id: 'inicio', label: 'Inicio', icon: Home },
               { id: 'traslados', label: 'Padres 🚗', icon: Car },
-              { id: 'citas', label: 'Médicos', icon: Activity },
+              { id: 'citas', label: 'Salud 🩺', icon: Activity },
               { id: 'cumples', label: 'Cumples', icon: Gift },
               { id: 'arbol', label: 'Árbol', icon: Users }
             ].map(tab => {
