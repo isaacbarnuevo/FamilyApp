@@ -618,10 +618,34 @@ const enviarEncuestaTelegram = async (pregunta, opciones) => {
       })
     });
     const data = await res.json();
-    return data && data.ok;
+    if (data && data.ok) {
+      return {
+        ok: true,
+        pollId: data.result?.poll?.id,
+        messageId: data.result?.message_id
+      };
+    }
+    return { ok: false, error: data?.description };
   } catch (err) {
     console.error('Error al enviar encuesta a Telegram:', err);
-    return false;
+    return { ok: false, error: err.message };
+  }
+};
+
+const sincronizarVotosTelegram = async () => {
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates?allowed_updates=["poll_answer"]`);
+    const data = await res.json();
+    if (data && data.ok && Array.isArray(data.result)) {
+      const pollAnswers = data.result
+        .filter(u => u.poll_answer)
+        .map(u => u.poll_answer);
+      return pollAnswers;
+    }
+    return [];
+  } catch (err) {
+    console.error('Error sincronizando votos de Telegram:', err);
+    return [];
   }
 };
 
@@ -1261,6 +1285,17 @@ export default function App() {
     asistentes: []
   });
   const [notifyTelegramOnEvent, setNotifyTelegramOnEvent] = useState(true);
+  const [showPropuestaModal, setShowPropuestaModal] = useState(false);
+  const [sincronizandoVotos, setSincronizandoVotos] = useState(false);
+  const [nuevaPropuesta, setNuevaPropuesta] = useState({
+    titulo: 'Comida en La Esgaravita',
+    fecha: '2026-10-17',
+    hora: '14:30',
+    lugar: 'La Esgaravita (Alcalá de Henares)',
+    descripcion: 'Comida familiar de sábado para reunirnos y charlar. ¡Votad para confirmar asistencia!',
+    opciones: ['¡Me apunto! 🙋‍♂️', 'No puedo esta vez 😔', 'Llego a los cafés ☕'],
+    enviarTelegram: true
+  });
 
   const [showCumpleModal, setShowCumpleModal] = useState(false);
   const [isEditingCumple, setIsEditingCumple] = useState(false);
@@ -3313,6 +3348,246 @@ export default function App() {
     }
   };
 
+  // --- GESTIÓN DE PROPUESTAS DE QUEDADA CON VOTACIÓN EN TELEGRAM ---
+  const handleLanzarPropuestaQuedada = async (customPropuesta = null) => {
+    const p = customPropuesta || nuevaPropuesta;
+    if (!p.titulo || !p.fecha) {
+      triggerToast('⚠️ Por favor indica al menos título y fecha de la propuesta.');
+      return;
+    }
+
+    const autorTxt = matchedMember?.nombre || usuarioActivo || 'Familiar';
+    const opciones = Array.isArray(p.opciones) && p.opciones.length >= 2
+      ? p.opciones
+      : ['¡Me apunto! 🙋‍♂️', 'No puedo esta vez 😔', 'Llego a los cafés ☕'];
+
+    let pollRes = null;
+    if (p.enviarTelegram) {
+      triggerToast('✈️ Lanzando encuesta oficial al grupo de Telegram...');
+      const pregunta = `🍖 ¿${p.titulo.trim()} el ${formatearFechaStr(p.fecha)}${p.hora ? ` a las ${p.hora}` : ''} en ${p.lugar || 'lugar por concretar'}?`;
+      pollRes = await enviarEncuestaTelegram(pregunta, opciones);
+
+      if (pollRes && pollRes.ok) {
+        const replyMarkup = {
+          inline_keyboard: [
+            [
+              { text: "📲 Ver Propuesta en FamilyApp", url: "https://familiabarnuevoapp.web.app/?tab=eventos" }
+            ]
+          ]
+        };
+        await enviarMensajeTelegram(
+          `🗳️ <b>¡Nueva propuesta de quedada lanzada por ${autorTxt}!</b>\n\n` +
+          `📌 <b>${p.titulo}</b>\n` +
+          `📅 Fecha propuesta: ${formatearFechaStr(p.fecha)} (${p.hora || '14:30'})\n` +
+          `📍 Lugar: ${p.lugar || 'Por concretar'}\n\n` +
+          `👉 ¡Votad en la encuesta de arriba o confirmad en la App!`,
+          replyMarkup
+        );
+      }
+    }
+
+    const propuestaData = {
+      titulo: p.titulo.trim(),
+      fecha: p.fecha,
+      fechaFin: p.fecha,
+      hora: p.hora || '14:30',
+      lugar: p.lugar || 'La Esgaravita (Alcalá de Henares)',
+      ubicacionUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.lugar || 'La Esgaravita')}`,
+      descripcion: p.descripcion || 'Propuesta de quedada para votar fecha y asistencia en familia.',
+      esPropuesta: true,
+      estado: 'en_votacion',
+      pollId: pollRes?.pollId || null,
+      pollMessageId: pollRes?.messageId || null,
+      asistentes: [autorTxt],
+      votos: { [autorTxt]: opciones[0] },
+      opcionesVotacion: opciones,
+      creadoPor: autorTxt,
+      creadoEl: new Date().toISOString()
+    };
+
+    if (isCloudMode && user && !isLocalMode) {
+      try {
+        const col = collection(db, 'artifacts', appId, 'public', 'data', 'eventos');
+        await addDoc(col, propuestaData);
+        triggerToast('🗳️ ¡Propuesta y encuesta en Telegram guardadas con éxito!');
+      } catch (err) {
+        console.error(err);
+        const localList = [...eventos, { id: 'e_' + Date.now(), ...propuestaData }];
+        setEventos(localList);
+        persistLocal('eventos', localList);
+        triggerToast('🗳️ Guardada propuesta localmente.');
+      }
+    } else {
+      const localList = [...eventos, { id: 'e_' + Date.now(), ...propuestaData }];
+      setEventos(localList);
+      persistLocal('eventos', localList);
+      triggerToast('🗳️ Guardada propuesta localmente.');
+    }
+
+    setShowPropuestaModal(false);
+    setActiveTab('eventos');
+    setSubTabEventos('quedadas');
+  };
+
+  const handleVotarPropuesta = async (evtId, opcionTexto) => {
+    const miNombre = matchedMember?.nombre || usuarioActivo || 'Familiar';
+    const evt = eventos.find(e => e.id === evtId);
+    if (!evt) return;
+
+    const votosActuales = { ...(evt.votos || {}) };
+    votosActuales[miNombre] = opcionTexto;
+
+    const esPositivo = opcionTexto.includes('apunto') || opcionTexto.includes('Sí') || opcionTexto.includes('cafés');
+    let nuevosAsistentes = Array.isArray(evt.asistentes) ? [...evt.asistentes] : [];
+    if (esPositivo) {
+      if (!nuevosAsistentes.includes(miNombre)) nuevosAsistentes.push(miNombre);
+    } else {
+      nuevosAsistentes = nuevosAsistentes.filter(n => n !== miNombre);
+    }
+
+    const isLocal = typeof evtId === 'string' && evtId.startsWith('e_');
+    if (isCloudMode && user && !isLocalMode && !isLocal) {
+      try {
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'eventos', evtId);
+        await updateDoc(docRef, { votos: votosActuales, asistentes: nuevosAsistentes });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    const updated = eventos.map(e => e.id === evtId ? { ...e, votos: votosActuales, asistentes: nuevosAsistentes } : e);
+    setEventos(updated);
+    persistLocal('eventos', updated);
+    triggerToast(`🗳️ ¡Has votado: "${opcionTexto}"!`);
+  };
+
+  const handleSincronizarVotosTelegram = async (evtId) => {
+    const evt = eventos.find(e => e.id === evtId);
+    if (!evt) return;
+
+    setSincronizandoVotos(true);
+    triggerToast('🔄 Consultando votos de Telegram...');
+
+    try {
+      const respuestas = await sincronizarVotosTelegram();
+      let votosActualizados = { ...(evt.votos || {}) };
+      let asistentesActualizados = Array.isArray(evt.asistentes) ? [...evt.asistentes] : [];
+      let nuevosVotosCount = 0;
+
+      respuestas.forEach(ans => {
+        if (!evt.pollId || ans.poll_id === evt.pollId) {
+          const tgUser = ans.user;
+          const tgName = tgUser?.first_name || '';
+          const tgUserNick = tgUser?.username || '';
+          
+          const match = integrantes.find(i => 
+            (tgName && i.nombre.toLowerCase().includes(tgName.toLowerCase())) ||
+            (tgUserNick && i.nombre.toLowerCase().includes(tgUserNick.toLowerCase()))
+          );
+          const nombreFamiliar = match ? match.nombre : (tgName || 'Familiar Telegram');
+          
+          const optIdx = ans.option_ids?.[0];
+          if (optIdx !== undefined && evt.opcionesVotacion?.[optIdx]) {
+            const opcionElegida = evt.opcionesVotacion[optIdx];
+            votosActualizados[nombreFamiliar] = opcionElegida;
+            nuevosVotosCount++;
+
+            if (optIdx === 0 || opcionElegida.includes('apunto') || opcionElegida.includes('cafés')) {
+              if (!asistentesActualizados.includes(nombreFamiliar)) {
+                asistentesActualizados.push(nombreFamiliar);
+              }
+            } else {
+              asistentesActualizados = asistentesActualizados.filter(n => n !== nombreFamiliar);
+            }
+          }
+        }
+      });
+
+      const isLocal = typeof evtId === 'string' && evtId.startsWith('e_');
+      if (isCloudMode && user && !isLocalMode && !isLocal) {
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'eventos', evtId);
+        await updateDoc(docRef, { votos: votosActualizados, asistentes: asistentesActualizados });
+      }
+
+      const updated = eventos.map(e => e.id === evtId ? { ...e, votos: votosActualizados, asistentes: asistentesActualizados } : e);
+      setEventos(updated);
+      persistLocal('eventos', updated);
+
+      if (nuevosVotosCount > 0) {
+        triggerToast(`🎉 ¡Sincronizados ${nuevosVotosCount} voto(s) desde Telegram!`);
+      } else {
+        triggerToast('✨ No hay nuevos votos en Telegram pendientes de volcar.');
+      }
+    } catch (err) {
+      console.error(err);
+      triggerToast('⚠️ Error al consultar Telegram.');
+    } finally {
+      setSincronizandoVotos(false);
+    }
+  };
+
+  const handleConfirmarPropuestaOficial = async (evtId) => {
+    const evt = eventos.find(e => e.id === evtId);
+    if (!evt) return;
+
+    if (!confirm(`¿Confirmar oficialmente "${evt.titulo}" para el ${formatearFechaStr(evt.fecha)} y avisar al grupo de Telegram?`)) {
+      return;
+    }
+
+    const isLocal = typeof evtId === 'string' && evtId.startsWith('e_');
+    const updateData = { esPropuesta: false, estado: 'confirmado' };
+
+    if (isCloudMode && user && !isLocalMode && !isLocal) {
+      try {
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'eventos', evtId);
+        await updateDoc(docRef, updateData);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    const updated = eventos.map(e => e.id === evtId ? { ...e, ...updateData } : e);
+    setEventos(updated);
+    persistLocal('eventos', updated);
+
+    const googleCalUrl = getGoogleCalendarUrlForEvent(evt);
+    const replyMarkup = {
+      inline_keyboard: [
+        [
+          { text: "📅 Añadir a Google Calendar", url: googleCalUrl },
+          { text: "📲 Ver en FamilyApp", url: "https://familiabarnuevoapp.web.app/?tab=eventos" }
+        ]
+      ]
+    };
+    await enviarMensajeTelegram(
+      `🎉 <b>¡QUEDADA FAMILIAR CONFIRMADA!</b>\n\n` +
+      `🍖 <b>${evt.titulo}</b>\n` +
+      `📅 <b>Fecha:</b> ${formatearFechaStr(evt.fecha)} a las ${evt.hora}\n` +
+      `📍 <b>Lugar:</b> ${evt.lugar}\n` +
+      `👥 <b>Asistentes confirmados (${evt.asistentes?.length || 0}):</b> ${(evt.asistentes || []).join(', ')}\n\n` +
+      `👉 ¡Queda agendada oficialmente en el calendario familiar!`,
+      replyMarkup
+    );
+
+    triggerToast('🎉 ¡Quedada confirmada y anunciada en Telegram!');
+  };
+
+  const handleDescartarPropuesta = async (evtId) => {
+    if (!confirm('¿Deseas descartar esta propuesta de quedada?')) return;
+    const isLocal = typeof evtId === 'string' && evtId.startsWith('e_');
+    if (isCloudMode && user && !isLocalMode && !isLocal) {
+      try {
+        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'eventos', evtId));
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    const updated = eventos.filter(e => e.id !== evtId);
+    setEventos(updated);
+    persistLocal('eventos', updated);
+    triggerToast('🗑️ Propuesta descartada.');
+  };
+
   // --- GESTIÓN DE BOTES Y GASTOS COMPARTIDOS (FASE 3) ---
   const handleSaveBote = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
@@ -4029,21 +4304,32 @@ export default function App() {
       };
     }
 
-    let titulo = 'Quedada Familiar';
-    if (t.includes('barbacoa')) titulo = 'Barbacoa Familiar';
-    else if (t.includes('comida')) titulo = 'Comida Familiar';
-    else if (t.includes('cena')) titulo = 'Cena Familiar';
+    const esPropuesta = t.includes('proponer') || t.includes('propuesta') || t.includes('votar') || t.includes('votación') || t.includes('votacion') || t.includes('encuesta');
 
-    let lugar = 'Finca Esgaravita';
-    if (t.includes('munibáñez') || t.includes('munibañez')) lugar = 'Munibáñez';
+    let titulo = esPropuesta ? 'Propuesta: Comida Familiar' : 'Quedada Familiar';
+    if (t.includes('esgaravita')) {
+      titulo = 'Comida en La Esgaravita';
+    } else if (t.includes('barbacoa')) {
+      titulo = esPropuesta ? 'Propuesta: Barbacoa Familiar' : 'Barbacoa Familiar';
+    } else if (t.includes('comida')) {
+      titulo = esPropuesta ? 'Propuesta: Comida Familiar' : 'Comida Familiar';
+    } else if (t.includes('cena')) {
+      titulo = esPropuesta ? 'Propuesta: Cena Familiar' : 'Cena Familiar';
+    }
+
+    let lugar = 'La Esgaravita (Alcalá de Henares)';
+    if (t.includes('munibáñez') || t.includes('munibañez')) lugar = 'Finca Munibáñez';
     else if (t.includes('ribera')) lugar = 'La Ribera';
+    else if (t.includes('alcala') || t.includes('alcalá')) lugar = 'Alcalá de Henares';
+    else if (t.includes('madrid')) lugar = 'Madrid';
 
     return {
       tipo: 'evento',
       titulo,
       fecha,
-      hora: hora || '14:00',
+      hora: hora || '14:30',
       lugar,
+      esPropuesta,
       descripcion: texto
     };
   };
@@ -4208,6 +4494,22 @@ export default function App() {
         descripcion: analisisAsistente.descripcion || '',
         asistentes: [usuarioActivo]
       };
+
+      if (analisisAsistente.esPropuesta) {
+        await handleLanzarPropuestaQuedada({
+          titulo: analisisAsistente.titulo,
+          fecha: analisisAsistente.fecha,
+          hora: analisisAsistente.hora,
+          lugar: analisisAsistente.lugar,
+          descripcion: analisisAsistente.descripcion,
+          opciones: ['¡Me apunto! 🙋‍♂️', 'No puedo esta vez 😔', 'Llego a los cafés ☕'],
+          enviarTelegram: true
+        });
+        setShowAsistenteModal(false);
+        setActiveTab('eventos');
+        setSubTabEventos('quedadas');
+        return;
+      }
 
       if (isCloudMode && user && !isLocalMode) {
         try {
@@ -7852,96 +8154,280 @@ export default function App() {
                     </div>
 
                     {/* SUB-PESTAÑA 1: QUEDADAS Y BARBACOAS */}
-                    {subTabEventos === 'quedadas' && (
-                      <div className="space-y-6">
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-3xl border border-slate-150 shadow-sm">
-                          <div>
-                            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                              <CalendarIcon className="w-6 h-6 text-indigo-600" /> Barbacoas y Quedadas Fines de Semana
-                            </h2>
-                            <p className="text-xs text-slate-500 mt-1">
-                              Coordina comidas familiares, confirmaciones de asistencia y planes comunes.
-                            </p>
+                    {subTabEventos === 'quedadas' && (() => {
+                      const propuestasActivas = eventos.filter(e => e.esPropuesta && e.estado !== 'confirmado');
+                      const quedadasConfirmadas = eventos.filter(e => !e.esPropuesta || e.estado === 'confirmado');
+                      const miNombre = matchedMember?.nombre || usuarioActivo || 'Familiar';
+
+                      return (
+                        <div className="space-y-6">
+                          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-3xl border border-slate-150 shadow-sm">
+                            <div>
+                              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                                <CalendarIcon className="w-6 h-6 text-indigo-600" /> Barbacoas y Quedadas Fines de Semana
+                              </h2>
+                              <p className="text-xs text-slate-500 mt-1">
+                                Coordina comidas familiares, lanza votaciones en Telegram y confirma asistencia.
+                              </p>
+                            </div>
+                            <div className="flex gap-2 flex-wrap">
+                              <button
+                                onClick={() => {
+                                  setNuevaPropuesta({
+                                    titulo: 'Comida en La Esgaravita',
+                                    fecha: '2026-10-17',
+                                    hora: '14:30',
+                                    lugar: 'La Esgaravita (Alcalá de Henares)',
+                                    descripcion: 'Comida familiar de sábado para reunirnos y charlar. ¡Votad para confirmar asistencia!',
+                                    opciones: ['¡Me apunto! 🙋‍♂️', 'No puedo esta vez 😔', 'Llego a los cafés ☕'],
+                                    enviarTelegram: true
+                                  });
+                                  setShowPropuestaModal(true);
+                                }}
+                                className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-md shrink-0 flex items-center gap-1.5 transition"
+                              >
+                                <span>🗳️</span> Proponer Votación en Telegram
+                              </button>
+                              <button onClick={() => setShowEventModal(true)} className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold text-xs py-2.5 px-3.5 rounded-xl shadow-xs shrink-0 flex items-center gap-1.5 transition">
+                                <Plus className="w-4 h-4 text-indigo-600" /> Plan Directo
+                              </button>
+                            </div>
                           </div>
-                          <button onClick={() => setShowEventModal(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-md shrink-0 flex items-center gap-1.5">
-                            <Plus className="w-4 h-4" /> Proponer Plan Familiar
-                          </button>
-                        </div>
 
-                        <div className="space-y-4">
-                          {eventos.map(evt => (
-                            <div key={evt.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-                              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                <div className="space-y-2 flex-1 relative pr-12">
-                                  {/* Botones de acción rápidos */}
-                                  <div className="absolute top-0 right-0 flex gap-1">
-                                    <button
-                                      onClick={() => startEditEvent(evt)}
-                                      className="text-slate-400 hover:text-indigo-600 p-1.5 hover:bg-slate-100 rounded-lg transition"
-                                      title="Editar plan"
-                                    >
-                                      <Edit2 className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteElement('eventos', evt.id)}
-                                      className="text-slate-350 hover:text-rose-500 p-1.5 hover:bg-slate-100 rounded-lg transition"
-                                      title="Eliminar plan"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  </div>
+                          {/* SECCIÓN PROPUESTAS EN VOTACIÓN EN TELEGRAM */}
+                          {propuestasActivas.length > 0 && (
+                            <div className="space-y-4">
+                              <div className="flex items-center justify-between">
+                                <h3 className="text-sm font-black text-purple-900 uppercase tracking-wider flex items-center gap-2">
+                                  <span>🗳️</span> Propuestas en Votación ({propuestasActivas.length})
+                                </h3>
+                                <span className="text-[10px] bg-purple-100 text-purple-800 font-bold px-2.5 py-0.5 rounded-full border border-purple-200">
+                                  Encuesta enviada al grupo Laos
+                                </span>
+                              </div>
 
-                                  <h3 className="text-xl font-bold text-slate-800 pr-12">{evt.titulo}</h3>
-                                  <p className="text-xs text-slate-500 flex items-center gap-2 flex-wrap">
-                                    <span>
-                                      📅 {evt.fechaFin && evt.fechaFin !== evt.fecha 
-                                        ? `Del ${formatearFechaStr(evt.fecha)} al ${formatearFechaStr(evt.fechaFin)}`
-                                        : `${formatearFechaStr(evt.fecha)} - ${evt.hora || 'Por concretar'}`
-                                      }
-                                    </span>
-                                    {evt.fechaFin && evt.fechaFin !== evt.fecha && (
-                                      <span className="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-200">
-                                        🎉 Varios días / Fin de semana
-                                      </span>
-                                    )}
-                                    <span>| 📍 Lugar: {evt.lugar}</span>
-                                  </p>
-                                  {evt.descripcion && <p className="text-xs text-slate-650 bg-slate-50 p-2 rounded-lg">{evt.descripcion}</p>}
-                                  <div className="pt-1">
-                                    <a
-                                      href={getGoogleCalendarUrlForEvent(evt)}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-1.5 text-[11px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:text-indigo-800 px-3 py-1.5 rounded-xl border border-indigo-200 transition shadow-3xs"
-                                      title="Abrir y guardar en Google Calendar"
+                              <div className="space-y-4">
+                                {propuestasActivas.map(prop => {
+                                  const votosObj = prop.votos || {};
+                                  const miVoto = votosObj[miNombre];
+                                  const opciones = Array.isArray(prop.opcionesVotacion) && prop.opcionesVotacion.length > 0
+                                    ? prop.opcionesVotacion
+                                    : ['¡Me apunto! 🙋‍♂️', 'No puedo esta vez 😔', 'Llego a los cafés ☕'];
+
+                                  return (
+                                    <div
+                                      key={prop.id}
+                                      className="bg-gradient-to-br from-purple-50/70 via-indigo-50/50 to-white rounded-3xl border-2 border-purple-200 p-5 sm:p-6 shadow-sm space-y-4 relative"
                                     >
-                                      <span>📅</span> Añadir a Google Calendar
-                                    </a>
-                                  </div>
-                                </div>
-                                <div className="md:w-72 bg-slate-50 p-4 rounded-xl border border-slate-200">
-                                  <p className="text-xs font-bold text-slate-600 mb-2">Confirmados:</p>
-                                  <div className="flex flex-wrap gap-1">
-                                    {integrantes.map(int => {
-                                      const asiste = evt.asistentes?.includes(int.nombre);
-                                      return (
-                                        <button
-                                          key={int.id}
-                                          onClick={() => alternarFamiliarEnEvento(evt.id, evt.asistentes || [], int.nombre)}
-                                          className={`text-[9px] px-2 py-0.5 rounded ${asiste ? 'bg-emerald-600 text-white font-bold' : 'bg-white border text-slate-600'}`}
-                                        >
-                                          {int.nombre}
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
+                                      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                                        <div className="space-y-2 flex-1">
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="bg-purple-600 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1 shadow-3xs animate-pulse">
+                                              <span>🔴</span> Votación Activa en Telegram
+                                            </span>
+                                            {prop.pollId && (
+                                              <span className="text-[10px] text-purple-700 bg-white/80 border border-purple-200 px-2 py-0.5 rounded-full font-bold">
+                                                ID Encuesta: {String(prop.pollId).slice(-6)}
+                                              </span>
+                                            )}
+                                          </div>
+
+                                          <h3 className="text-xl font-black text-slate-900">{prop.titulo}</h3>
+                                          <p className="text-xs text-slate-600 flex items-center gap-2 flex-wrap font-medium">
+                                            <span>📅 {formatearFechaStr(prop.fecha)} - {prop.hora || '14:30'}</span>
+                                            <span>|</span>
+                                            <span>📍 {prop.lugar}</span>
+                                          </p>
+                                          {prop.descripcion && (
+                                            <p className="text-xs text-slate-600 bg-white/80 p-2.5 rounded-xl border border-purple-100 italic">
+                                              "{prop.descripcion}"
+                                            </p>
+                                          )}
+                                        </div>
+
+                                        {/* Acciones principales de la propuesta */}
+                                        <div className="flex flex-wrap md:flex-col gap-2 shrink-0">
+                                          <button
+                                            onClick={() => handleConfirmarPropuestaOficial(prop.id)}
+                                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-3.5 rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition"
+                                            title="Confirmar definitivamente y avisar a Telegram"
+                                          >
+                                            <span>🎉 Confirmar Oficial</span>
+                                          </button>
+                                          <button
+                                            onClick={() => handleSincronizarVotosTelegram(prop.id)}
+                                            disabled={sincronizandoVotos}
+                                            className="bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs py-2 px-3.5 rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+                                            title="Volcar votos emitidos por los familiares en la encuesta de Telegram"
+                                          >
+                                            <span className={sincronizandoVotos ? 'animate-spin' : ''}>🔄</span>
+                                            <span>{sincronizandoVotos ? 'Sincronizando...' : 'Sincronizar Telegram'}</span>
+                                          </button>
+                                          <button
+                                            onClick={() => handleDescartarPropuesta(prop.id)}
+                                            className="text-slate-400 hover:text-rose-600 text-xs py-1.5 px-3 rounded-xl hover:bg-rose-50 font-bold transition flex items-center justify-center gap-1"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" /> Descartar
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {/* Votación rápida para el usuario activo */}
+                                      <div className="bg-white/90 p-3.5 rounded-2xl border border-purple-150 space-y-2">
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-[11px] font-bold text-slate-700">
+                                            Tu voto ({miNombre}):
+                                          </span>
+                                          {miVoto && (
+                                            <span className="text-[10px] font-black text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200">
+                                              Has votado: {miVoto}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                          {opciones.map((opt, oIdx) => {
+                                            const isSelected = miVoto === opt;
+                                            return (
+                                              <button
+                                                key={oIdx}
+                                                onClick={() => handleVotarPropuesta(prop.id, opt)}
+                                                className={`text-xs py-2 px-3 rounded-xl font-bold border transition text-left sm:text-center truncate ${
+                                                  isSelected
+                                                    ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
+                                                    : 'bg-white hover:bg-purple-50 text-slate-700 border-slate-200'
+                                                }`}
+                                              >
+                                                {isSelected ? '✓ ' : ''}{opt}
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+
+                                      {/* Lista de votos de todos los familiares */}
+                                      <div className="bg-white/70 p-3 rounded-2xl border border-purple-100">
+                                        <p className="text-[11px] font-bold text-slate-600 mb-2">
+                                          Estado de votos y confirmaciones ({prop.asistentes?.length || 0} confirmados):
+                                        </p>
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {integrantes.map(int => {
+                                            const voto = votosObj[int.nombre];
+                                            const asiste = prop.asistentes?.includes(int.nombre);
+                                            return (
+                                              <span
+                                                key={int.id || int.nombre}
+                                                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold border flex items-center gap-1 ${
+                                                  asiste
+                                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                                    : voto && voto.includes('No')
+                                                      ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                                      : voto
+                                                        ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                                        : 'bg-slate-50 text-slate-400 border-dashed border-slate-250'
+                                                }`}
+                                                title={voto || 'Pendiente de votar'}
+                                              >
+                                                <span>{asiste ? '✓' : voto && voto.includes('No') ? '✕' : '⏳'}</span>
+                                                <span>{int.nombre.split(' ')[0]}</span>
+                                                {voto && <span className="opacity-80 font-normal">({voto.includes('cafés') ? 'Cafés' : voto.includes('No') ? 'No' : 'Sí'})</span>}
+                                              </span>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
-                          ))}
+                          )}
+
+                          {/* LISTA DE QUEDADAS OFICIALES / CONFIRMADAS */}
+                          <div className="space-y-4">
+                            <h3 className="text-sm font-black text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                              <span>📅</span> Quedadas Oficiales Confirmadas ({quedadasConfirmadas.length})
+                            </h3>
+
+                            {quedadasConfirmadas.length === 0 ? (
+                              <div className="bg-white rounded-3xl border border-slate-200 p-8 text-center text-slate-400 text-xs">
+                                No hay quedadas confirmadas actualmente. ¡Lanza una propuesta para votar!
+                              </div>
+                            ) : (
+                              quedadasConfirmadas.map(evt => (
+                                <div key={evt.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                    <div className="space-y-2 flex-1 relative pr-12">
+                                      {/* Botones de acción rápidos */}
+                                      <div className="absolute top-0 right-0 flex gap-1">
+                                        <button
+                                          onClick={() => startEditEvent(evt)}
+                                          className="text-slate-400 hover:text-indigo-600 p-1.5 hover:bg-slate-100 rounded-lg transition"
+                                          title="Editar plan"
+                                        >
+                                          <Edit2 className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                          onClick={() => handleDeleteElement('eventos', evt.id)}
+                                          className="text-slate-350 hover:text-rose-500 p-1.5 hover:bg-slate-100 rounded-lg transition"
+                                          title="Eliminar plan"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      </div>
+
+                                      <h3 className="text-xl font-bold text-slate-800 pr-12">{evt.titulo}</h3>
+                                      <p className="text-xs text-slate-500 flex items-center gap-2 flex-wrap">
+                                        <span>
+                                          📅 {evt.fechaFin && evt.fechaFin !== evt.fecha 
+                                            ? `Del ${formatearFechaStr(evt.fecha)} al ${formatearFechaStr(evt.fechaFin)}`
+                                            : `${formatearFechaStr(evt.fecha)} - ${evt.hora || 'Por concretar'}`
+                                          }
+                                        </span>
+                                        {evt.fechaFin && evt.fechaFin !== evt.fecha && (
+                                          <span className="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-200">
+                                            🎉 Varios días / Fin de semana
+                                          </span>
+                                        )}
+                                        <span>| 📍 Lugar: {evt.lugar}</span>
+                                      </p>
+                                      {evt.descripcion && <p className="text-xs text-slate-650 bg-slate-50 p-2 rounded-lg">{evt.descripcion}</p>}
+                                      <div className="pt-1">
+                                        <a
+                                          href={getGoogleCalendarUrlForEvent(evt)}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="inline-flex items-center gap-1.5 text-[11px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:text-indigo-800 px-3 py-1.5 rounded-xl border border-indigo-200 transition shadow-3xs"
+                                          title="Abrir y guardar en Google Calendar"
+                                        >
+                                          <span>📅</span> Añadir a Google Calendar
+                                        </a>
+                                      </div>
+                                    </div>
+                                    <div className="md:w-72 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                      <p className="text-xs font-bold text-slate-600 mb-2">Confirmados ({evt.asistentes?.length || 0}):</p>
+                                      <div className="flex flex-wrap gap-1">
+                                        {integrantes.map(int => {
+                                          const asiste = evt.asistentes?.includes(int.nombre);
+                                          return (
+                                            <button
+                                              key={int.id}
+                                              onClick={() => alternarFamiliarEnEvento(evt.id, evt.asistentes || [], int.nombre)}
+                                              className={`text-[9px] px-2 py-0.5 rounded ${asiste ? 'bg-emerald-600 text-white font-bold' : 'bg-white border text-slate-600'}`}
+                                            >
+                                              {int.nombre}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {/* SUB-PESTAÑA 2: BOTES & CUENTAS CLARAS */}
                     {subTabEventos === 'botes' && (() => {
@@ -10972,6 +11458,169 @@ export default function App() {
             </div>
           )}
 
+          {/* Modal Proponer Quedada Familiar con Encuesta Telegram */}
+          {showPropuestaModal && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-fadeIn overflow-y-auto">
+              <div className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-slate-100 my-4 text-xs">
+                <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2.5">
+                    <span className="p-2 bg-gradient-to-br from-sky-500 to-indigo-600 text-white rounded-2xl text-lg shadow-sm">
+                      🗳️
+                    </span>
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-base flex items-center gap-1.5">
+                        <span>Proponer Quedada Familiar</span>
+                        <span className="bg-sky-100 text-sky-800 text-[10px] font-black px-2 py-0.5 rounded-full border border-sky-200">
+                          Telegram Poll
+                        </span>
+                      </h3>
+                      <p className="text-[11px] text-slate-500">
+                        Crea una propuesta interactiva. La familia vota en Telegram o en la app y se guardan los asistentes.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowPropuestaModal(false)}
+                    className="text-slate-400 hover:text-slate-600 font-bold p-1 text-base transition"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleLanzarPropuestaQuedada();
+                    setShowPropuestaModal(false);
+                  }}
+                  className="space-y-3.5"
+                >
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Título de la Quedada *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ej: Comida en La Esgaravita, Barbacoa familiar..."
+                      className="w-full p-2.5 border rounded-xl font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                      value={nuevaPropuesta.titulo}
+                      onChange={(e) => setNuevaPropuesta({ ...nuevaPropuesta, titulo: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                        Fecha Propuesta *
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        className="w-full p-2.5 border rounded-xl font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                        value={nuevaPropuesta.fecha}
+                        onChange={(e) => setNuevaPropuesta({ ...nuevaPropuesta, fecha: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                        Hora Estimada
+                      </label>
+                      <input
+                        type="time"
+                        className="w-full p-2.5 border rounded-xl font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                        value={nuevaPropuesta.hora}
+                        onChange={(e) => setNuevaPropuesta({ ...nuevaPropuesta, hora: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Lugar de Encuentro *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ej: La Esgaravita (Alcalá de Henares)"
+                      className="w-full p-2.5 border rounded-xl font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                      value={nuevaPropuesta.lugar}
+                      onChange={(e) => setNuevaPropuesta({ ...nuevaPropuesta, lugar: e.target.value })}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Descripción o Notas para el grupo
+                    </label>
+                    <textarea
+                      rows="2"
+                      placeholder="Motivo de la quedada, detalles, etc..."
+                      className="w-full p-2.5 border rounded-xl font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                      value={nuevaPropuesta.descripcion}
+                      onChange={(e) => setNuevaPropuesta({ ...nuevaPropuesta, descripcion: e.target.value })}
+                    />
+                  </div>
+
+                  {/* Previsualización de Opciones de Votación */}
+                  <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                        <span>📊</span> Opciones de la Encuesta Telegram
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-medium">Voto público (no anónimo)</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {nuevaPropuesta.opciones?.map((opt, idx) => (
+                        <div key={idx} className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-150 text-slate-700 font-medium text-[11px]">
+                          <span className="text-sky-600 font-bold">{idx + 1}.</span>
+                          <span>{opt}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Toggle Telegram */}
+                  <div className="bg-sky-50/80 border border-sky-200 p-3 rounded-2xl">
+                    <label className="flex items-center gap-2.5 cursor-pointer text-slate-700">
+                      <input
+                        type="checkbox"
+                        className="rounded text-sky-600 focus:ring-sky-500 w-4 h-4 cursor-pointer"
+                        checked={nuevaPropuesta.enviarTelegram}
+                        onChange={(e) => setNuevaPropuesta({ ...nuevaPropuesta, enviarTelegram: e.target.checked })}
+                      />
+                      <div>
+                        <span className="text-xs font-bold text-sky-950 flex items-center gap-1.5">
+                          <span>✈️</span> Enviar encuesta oficial al grupo de Telegram (Laos)
+                        </span>
+                        <p className="text-[10px] text-sky-700">
+                          Se creará la encuesta interactiva en el grupo para que todos voten con 1 toque.
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setShowPropuestaModal(false)}
+                      className="px-4 py-2 rounded-xl text-slate-500 hover:bg-slate-100 font-bold transition"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="bg-gradient-to-r from-sky-600 via-indigo-600 to-indigo-700 hover:from-sky-700 hover:to-indigo-800 text-white px-5 py-2.5 rounded-xl font-bold transition shadow-md flex items-center gap-1.5"
+                    >
+                      <span>🚀 Lanzar Votación y Guardar</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
           {/* MODAL DE SELECCIÓN DE EXPORTACIÓN A PDF */}
           {showPrintModal && (
             <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50 animate-fadeIn">
@@ -11138,6 +11787,17 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => {
+                        const txt = "Comida en La Esgaravita el sabado de Octubre a las 14:30 y que voten";
+                        setTextoAsistente(txt);
+                        setAnalisisAsistente(analizarTextoLenguajeNatural(txt));
+                      }}
+                      className="bg-sky-100 hover:bg-sky-200 text-sky-800 font-bold px-2.5 py-1 rounded-lg transition whitespace-nowrap border border-sky-300 shadow-xs"
+                    >
+                      🗳️ Quedada Esgaravita (Votar)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
                         const txt = "Mamá tiene cardiólogo el próximo martes a las 11:30 en la Jiménez Díaz";
                         setTextoAsistente(txt);
                         setAnalisisAsistente(analizarTextoLenguajeNatural(txt));
@@ -11180,10 +11840,12 @@ export default function App() {
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border ${
                           analisisAsistente.tipo === 'cita' ? 'bg-rose-100 text-rose-700 border-rose-200'
                           : analisisAsistente.tipo === 'traslado' ? 'bg-amber-100 text-amber-800 border-amber-200'
+                          : analisisAsistente.esPropuesta ? 'bg-sky-100 text-sky-800 border-sky-300'
                           : 'bg-emerald-100 text-emerald-800 border-emerald-200'
                         }`}>
                           {analisisAsistente.tipo === 'cita' ? '🩺 Cita Médica'
                             : analisisAsistente.tipo === 'traslado' ? '🚗 Traslado Padres'
+                            : analisisAsistente.esPropuesta ? '🗳️ Propuesta / Votación Telegram'
                             : '🍖 Evento / Quedada'}
                         </span>
                       </div>
@@ -11237,10 +11899,16 @@ export default function App() {
                               <span className="text-[10px] text-slate-400 font-bold block">LUGAR</span>
                               <span className="font-bold text-slate-800">{analisisAsistente.lugar}</span>
                             </div>
-                            <div className="bg-white/80 p-2 rounded-xl col-span-2">
+                            <div className={`bg-white/80 p-2 rounded-xl ${analisisAsistente.esPropuesta ? 'col-span-1' : 'col-span-2'}`}>
                               <span className="text-[10px] text-slate-400 font-bold block">FECHA & HORA</span>
                               <span className="font-bold text-slate-800">{analisisAsistente.fecha} ({analisisAsistente.hora})</span>
                             </div>
+                            {analisisAsistente.esPropuesta && (
+                              <div className="bg-sky-50 p-2 rounded-xl border border-sky-150">
+                                <span className="text-[10px] text-sky-800 font-bold block">ENCUESTA TELEGRAM</span>
+                                <span className="font-bold text-sky-900 text-[11px]">🗳️ Se lanzará encuesta pública</span>
+                              </div>
+                            )}
                           </>
                         )}
                       </div>
@@ -11256,9 +11924,13 @@ export default function App() {
                         <button
                           type="button"
                           onClick={handleConfirmarAsistente}
-                          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-bold transition shadow-md text-xs flex items-center gap-1.5"
+                          className={`px-5 py-2.5 rounded-xl text-white font-bold transition shadow-md text-xs flex items-center gap-1.5 ${
+                            analisisAsistente.esPropuesta
+                              ? 'bg-gradient-to-r from-sky-600 via-indigo-600 to-indigo-700 hover:from-sky-700 hover:to-indigo-800'
+                              : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700'
+                          }`}
                         >
-                          <span>✨ Guardar Directamente</span>
+                          <span>{analisisAsistente.esPropuesta ? '🗳️ Lanzar Encuesta a Telegram y Guardar' : '✨ Guardar Directamente'}</span>
                         </button>
                       </div>
                     </div>
