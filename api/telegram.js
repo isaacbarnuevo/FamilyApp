@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
-import { getFirestore, collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { runDailyDigest } from '../scripts/telegram_daily_cron.mjs';
 
 const firebaseConfig = {
@@ -129,6 +129,86 @@ async function obtenerDatosFirestore() {
   };
 }
 
+async function procesarVotoEncuesta(pollAnswer) {
+  const pollId = String(pollAnswer.poll_id || '');
+  const user = pollAnswer.user;
+  const optionIds = pollAnswer.option_ids || [];
+
+  if (!pollId || !user) return;
+
+  const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  try {
+    await signInAnonymously(auth);
+  } catch (e) {
+    // ignore
+  }
+
+  const colEventos = collection(db, 'artifacts', APP_ID, 'public', 'data', 'eventos');
+  const snapEventos = await getDocs(colEventos);
+
+  const propuestaDoc = snapEventos.docs.find(d => {
+    const data = d.data();
+    return String(data.pollId || data.poll_id || '') === pollId;
+  });
+
+  if (!propuestaDoc) {
+    console.log(`[Telegram Poll] No se encontró evento para pollId: ${pollId}`);
+    return;
+  }
+
+  const pData = propuestaDoc.data();
+  const opciones = pData.opcionesVotacion || ['¡Me apunto! 🙋‍♂️', 'No puedo esta vez 😔', 'Llego a los cafés ☕'];
+
+  // Obtener integrantes para mapear al nombre del familiar
+  const snapMiembros = await getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'miembros'));
+  const integrantes = snapMiembros.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  const firstName = (user.first_name || '').trim().toLowerCase();
+  const username = (user.username || '').trim().toLowerCase();
+
+  const match = integrantes.find(i => {
+    const n = (i.nombre || '').toLowerCase();
+    const alias = (i.alias || '').toLowerCase();
+    const tg = (i.telegram || i.telegramUser || '').toLowerCase().replace('@', '');
+    return (
+      (firstName && (n.includes(firstName) || firstName.includes(n))) ||
+      (username && tg && tg === username) ||
+      (alias && firstName && (alias.includes(firstName) || firstName.includes(alias)))
+    );
+  });
+
+  const votanteNombre = match?.nombre || user.first_name || user.username || `Usuario ${user.id}`;
+  const currentVotos = { ...(pData.votos || {}) };
+  let currentAsistentes = Array.isArray(pData.asistentes) ? [...pData.asistentes] : [];
+
+  if (optionIds.length > 0) {
+    const optIdx = optionIds[0];
+    const votoTexto = opciones[optIdx] || `Opción ${optIdx}`;
+    currentVotos[votanteNombre] = votoTexto;
+
+    const esPositivo = !votoTexto.toLowerCase().includes('no puedo') && !votoTexto.toLowerCase().includes('no asisto');
+    if (esPositivo && !currentAsistentes.includes(votanteNombre)) {
+      currentAsistentes.push(votanteNombre);
+    } else if (!esPositivo) {
+      currentAsistentes = currentAsistentes.filter(a => a !== votanteNombre);
+    }
+  } else {
+    delete currentVotos[votanteNombre];
+    currentAsistentes = currentAsistentes.filter(a => a !== votanteNombre);
+  }
+
+  await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'eventos', propuestaDoc.id), {
+    votos: currentVotos,
+    asistentes: currentAsistentes,
+    actualizadoEl: new Date().toISOString()
+  });
+
+  console.log(`[Telegram Poll] Voto registrado para ${votanteNombre}: ${currentVotos[votanteNombre] || 'retirado'}`);
+}
+
 export default async function handler(req, res) {
   // Manejo de peticiones GET de prueba/health check o ejecución de CRON
   if (req.method === 'GET') {
@@ -150,7 +230,22 @@ export default async function handler(req, res) {
   }
 
   const update = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-  if (!update || !update.message) {
+  if (!update) {
+    return res.status(200).json({ ok: true, ignored: 'Empty update' });
+  }
+
+  // Manejar respuestas/votos a encuestas de Telegram automáticamente
+  if (update.poll_answer) {
+    try {
+      await procesarVotoEncuesta(update.poll_answer);
+      return res.status(200).json({ ok: true, type: 'poll_answer_processed' });
+    } catch (pollErr) {
+      console.error('Error procesando poll_answer:', pollErr);
+      return res.status(200).json({ ok: false, error: pollErr.message });
+    }
+  }
+
+  if (!update.message) {
     return res.status(200).json({ ok: true, ignored: 'No message update' });
   }
 

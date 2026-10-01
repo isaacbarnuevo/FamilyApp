@@ -633,20 +633,9 @@ const enviarEncuestaTelegram = async (pregunta, opciones) => {
 };
 
 const sincronizarVotosTelegram = async () => {
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates?allowed_updates=["poll_answer"]`);
-    const data = await res.json();
-    if (data && data.ok && Array.isArray(data.result)) {
-      const pollAnswers = data.result
-        .filter(u => u.poll_answer)
-        .map(u => u.poll_answer);
-      return pollAnswers;
-    }
-    return [];
-  } catch (err) {
-    console.error('Error sincronizando votos de Telegram:', err);
-    return [];
-  }
+  // Los votos se reciben en tiempo real vía Webhook en Vercel y se guardan directamente en Firestore.
+  // No llamamos a getUpdates en el cliente para no resetear el Webhook ni bloquear los comandos del Bot (/citas, /hoy...).
+  return [];
 };
 
 // --- PRESELECCIONES Y UTILIDADES PARA CITAS MÉDICAS ---
@@ -3466,61 +3455,27 @@ export default function App() {
     if (!evt) return;
 
     setSincronizandoVotos(true);
-    triggerToast('🔄 Consultando votos de Telegram...');
+    triggerToast('🔄 Actualizando votos en tiempo real...');
 
     try {
-      const respuestas = await sincronizarVotosTelegram();
-      let votosActualizados = { ...(evt.votos || {}) };
-      let asistentesActualizados = Array.isArray(evt.asistentes) ? [...evt.asistentes] : [];
-      let nuevosVotosCount = 0;
-
-      respuestas.forEach(ans => {
-        if (!evt.pollId || ans.poll_id === evt.pollId) {
-          const tgUser = ans.user;
-          const tgName = tgUser?.first_name || '';
-          const tgUserNick = tgUser?.username || '';
-          
-          const match = integrantes.find(i => 
-            (tgName && i.nombre.toLowerCase().includes(tgName.toLowerCase())) ||
-            (tgUserNick && i.nombre.toLowerCase().includes(tgUserNick.toLowerCase()))
-          );
-          const nombreFamiliar = match ? match.nombre : (tgName || 'Familiar Telegram');
-          
-          const optIdx = ans.option_ids?.[0];
-          if (optIdx !== undefined && evt.opcionesVotacion?.[optIdx]) {
-            const opcionElegida = evt.opcionesVotacion[optIdx];
-            votosActualizados[nombreFamiliar] = opcionElegida;
-            nuevosVotosCount++;
-
-            if (optIdx === 0 || opcionElegida.includes('apunto') || opcionElegida.includes('cafés')) {
-              if (!asistentesActualizados.includes(nombreFamiliar)) {
-                asistentesActualizados.push(nombreFamiliar);
-              }
-            } else {
-              asistentesActualizados = asistentesActualizados.filter(n => n !== nombreFamiliar);
-            }
-          }
-        }
-      });
-
       const isLocal = typeof evtId === 'string' && evtId.startsWith('e_');
       if (isCloudMode && user && !isLocalMode && !isLocal) {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'eventos', evtId);
-        await updateDoc(docRef, { votos: votosActualizados, asistentes: asistentesActualizados });
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          const fresh = snap.data();
+          const updated = eventos.map(e => e.id === evtId ? { ...e, ...fresh } : e);
+          setEventos(updated);
+          persistLocal('eventos', updated);
+          const count = Object.keys(fresh.votos || {}).length;
+          triggerToast(`✅ Votos al día: ${count} familiar(es) han participado.`);
+          return;
+        }
       }
-
-      const updated = eventos.map(e => e.id === evtId ? { ...e, votos: votosActualizados, asistentes: asistentesActualizados } : e);
-      setEventos(updated);
-      persistLocal('eventos', updated);
-
-      if (nuevosVotosCount > 0) {
-        triggerToast(`🎉 ¡Sincronizados ${nuevosVotosCount} voto(s) desde Telegram!`);
-      } else {
-        triggerToast('✨ No hay nuevos votos en Telegram pendientes de volcar.');
-      }
+      triggerToast('✨ Votos sincronizados al día.');
     } catch (err) {
       console.error(err);
-      triggerToast('⚠️ Error al consultar Telegram.');
+      triggerToast('⚠️ Error al consultar los votos.');
     } finally {
       setSincronizandoVotos(false);
     }

@@ -44,7 +44,10 @@ async function configurarWebhook(url) {
   const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url: url })
+    body: JSON.stringify({
+      url: url,
+      allowed_updates: ['message', 'edited_message', 'poll_answer']
+    })
   });
   const data = await res.json();
   if (data.ok) {
