@@ -1235,6 +1235,13 @@ export default function App() {
   const [ubicacionActualPadres, setUbicacionActualPadres] = useState(() => {
     return localStorage.getItem('family_app_ubicacion_padres') || 'Alcalá (Esgaravita)';
   });
+  const [metaUbicacionPadres, setMetaUbicacionPadres] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('family_app_ubicacion_padres_meta') || '{}');
+    } catch {
+      return {};
+    }
+  });
   const [printType, setPrintType] = useState('full'); // 'full', 'calendar', 'cumples', 'arbol'
   const [showPrintModal, setShowPrintModal] = useState(false);
 
@@ -1274,6 +1281,7 @@ export default function App() {
     asistentes: []
   });
   const [notifyTelegramOnEvent, setNotifyTelegramOnEvent] = useState(true);
+  const [pollOnEvent, setPollOnEvent] = useState(false);
   const [showPropuestaModal, setShowPropuestaModal] = useState(false);
   const [sincronizandoVotos, setSincronizandoVotos] = useState(false);
   const [nuevaPropuesta, setNuevaPropuesta] = useState({
@@ -2108,9 +2116,14 @@ export default function App() {
     });
 
     const unsubUbicacion = onSnapshot(docUbicacion, (docSnap) => {
-      if (docSnap.exists() && docSnap.data()?.ubicacion) {
-        setUbicacionActualPadres(docSnap.data().ubicacion);
-        localStorage.setItem('family_app_ubicacion_padres', docSnap.data().ubicacion);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data?.ubicacion) {
+          setUbicacionActualPadres(data.ubicacion);
+          localStorage.setItem('family_app_ubicacion_padres', data.ubicacion);
+        }
+        setMetaUbicacionPadres(data);
+        localStorage.setItem('family_app_ubicacion_padres_meta', JSON.stringify(data));
       }
     }, (err) => {
       console.warn("Error snapshot ubicación padres:", err);
@@ -2224,14 +2237,29 @@ export default function App() {
       if (ultimoPasado && ultimoPasado.destino) {
         const d = (ultimoPasado.destino || '').toLowerCase();
         const destNorm = d.includes('madrid') ? 'Madrid' : (d.includes('alcalá') || d.includes('alcala') || d.includes('esgaravita') ? 'Alcalá (Esgaravita)' : ultimoPasado.destino);
-        setUbicacionActualPadres(destNorm);
-        localStorage.setItem('family_app_ubicacion_padres', destNorm);
-        if (isCloudMode && user && !isLocalMode) {
-          try {
-            const docRef = doc(db, 'artifacts', appId, 'public', 'config_ubicacion_padres');
-            setDoc(docRef, { ubicacion: destNorm, actualizadoPor: 'Limpieza automática de traslados', fecha: new Date().toISOString() }, { merge: true });
-          } catch (e) {
-            console.warn(e);
+        
+        const fechaHoraTraslado = `${ultimoPasado.fecha}T${ultimoPasado.hora || '12:00'}:00.000Z`;
+        const esManual = metaUbicacionPadres?.modo === 'manual' || metaUbicacionPadres?.esManual === true;
+        const fechaCambioManual = metaUbicacionPadres?.fechaCambio || metaUbicacionPadres?.fecha;
+
+        // La limpieza automática NUNCA pisa una ubicación que fue fijada manualmente a menos que haya un traslado posterior a ese cambio manual
+        if (!esManual || !fechaCambioManual || fechaHoraTraslado > fechaCambioManual) {
+          setUbicacionActualPadres(destNorm);
+          localStorage.setItem('family_app_ubicacion_padres', destNorm);
+          if (isCloudMode && user && !isLocalMode) {
+            try {
+              const docRef = doc(db, 'artifacts', appId, 'public', 'config_ubicacion_padres');
+              setDoc(docRef, {
+                ubicacion: destNorm,
+                modo: 'traslado',
+                esManual: false,
+                fechaCambio: fechaHoraTraslado,
+                actualizadoPor: 'Limpieza automática de traslados',
+                fecha: new Date().toISOString()
+              }, { merge: true });
+            } catch (e) {
+              console.warn(e);
+            }
           }
         }
       }
@@ -3278,20 +3306,64 @@ export default function App() {
 
     if (isCloudMode && user && !isLocalMode) {
       try {
+        let savedEventId = editingEventId;
         if (isEditingEvent && !isLocalEventId) {
           const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'eventos', editingEventId);
           await updateDoc(docRef, eventData);
           triggerToast('📅 ¡Quedada actualizada en la nube!');
         } else {
           const col = collection(db, 'artifacts', appId, 'public', 'data', 'eventos');
-          await addDoc(col, eventData);
+          const docRef = await addDoc(col, eventData);
+          savedEventId = docRef.id;
           triggerToast('📅 ¡Quedada guardada en la nube!');
         }
+
         if (notifyTelegramOnEvent) {
           const accionTxt = isEditingEvent ? 'actualizado' : 'propuesto';
           const autorTxt = usuarioActivo.split(' ')[0];
-          const msgTg = `🍖 <b>¡Plan familiar ${accionTxt} por ${autorTxt}!</b>\n\n📌 <b>${eventData.titulo}</b>\n📅 Fecha: ${textoFechaEvento}\n📍 Lugar: ${eventData.lugar}\n${eventData.descripcion ? `📝 <i>"${eventData.descripcion}"</i>\n` : ''}\n👉 <a href="https://familiabarnuevoapp.web.app">Entrar a la app para confirmar</a>`;
-          enviarMensajeTelegram(msgTg);
+          const targetId = savedEventId || editingEventId || 'plan';
+
+          const replyMarkup = {
+            inline_keyboard: [
+              [
+                { text: "🙋‍♂️ ¡Me apunto!", callback_data: `rsvp:${targetId}:apunto` },
+                { text: "☕ Cafés", callback_data: `rsvp:${targetId}:cafes` },
+                { text: "❌ No puedo", callback_data: `rsvp:${targetId}:no` }
+              ],
+              [
+                { text: "📲 Ver en FamilyApp", url: "https://familiabarnuevoapp.web.app/?tab=eventos" }
+              ]
+            ]
+          };
+
+          const asistentesTxt = eventData.asistentes?.length > 0
+            ? eventData.asistentes.map(a => `• ${a} 🙋‍♂️`).join('\n')
+            : '• <i>Pendiente de confirmaciones</i>';
+
+          const msgTg = `🍖 <b>¡Quedada familiar ${accionTxt} por ${autorTxt}!</b>\n\n` +
+            `📌 <b>${eventData.titulo}</b>\n` +
+            `📅 Fecha: <b>${textoFechaEvento}</b>\n` +
+            `📍 Lugar: <b>${eventData.lugar}</b>\n` +
+            (eventData.descripcion ? `📝 <i>"${eventData.descripcion}"</i>\n\n` : '\n') +
+            `👥 <b>Asistentes confirmados (${eventData.asistentes?.length || 0}):</b>\n` +
+            `${asistentesTxt}\n\n` +
+            `👇 ¡Confirma tu asistencia con un toque:`;
+
+          await enviarMensajeTelegram(msgTg, replyMarkup);
+
+          if (pollOnEvent) {
+            const pregunta = `🍖 ¿${eventData.titulo.trim()} el ${textoFechaEvento} en ${eventData.lugar}?`;
+            const opciones = ['¡Me apunto! 🙋‍♂️', 'No puedo esta vez 😔', 'Llego a los cafés ☕'];
+            const pollRes = await enviarEncuestaTelegram(pregunta, opciones);
+            if (pollRes && pollRes.ok && pollRes.pollId && targetId !== 'plan') {
+              try {
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'eventos', targetId), {
+                  pollId: pollRes.pollId,
+                  pollMessageId: pollRes.messageId
+                });
+              } catch (e) {}
+            }
+          }
         }
 
         setNewEvent({ titulo: '', fecha: '', fechaFin: '', hora: '', lugar: '', ubicacionUrl: '', descripcion: '', asistentes: [] });
@@ -3303,13 +3375,15 @@ export default function App() {
         triggerToast(`Error al guardar quedada: ${err.message || 'Permiso denegado'}`);
       }
     } else {
+      let localId = editingEventId;
       if (isEditingEvent) {
         const updated = eventos.map(evt => evt.id === editingEventId ? { ...evt, ...eventData } : evt);
         setEventos(updated);
         persistLocal('eventos', updated);
         triggerToast('📅 ¡Quedada actualizada localmente!');
       } else {
-        const updated = [...eventos, { id: 'e_' + Date.now(), ...eventData }];
+        localId = 'e_' + Date.now();
+        const updated = [...eventos, { id: localId, ...eventData }];
         setEventos(updated);
         persistLocal('eventos', updated);
         triggerToast('📅 ¡Quedada guardada localmente!');
@@ -3318,15 +3392,28 @@ export default function App() {
       if (notifyTelegramOnEvent) {
         const accionTxt = isEditingEvent ? 'actualizado' : 'propuesto';
         const autorTxt = usuarioActivo.split(' ')[0];
-        const msgTg = `🍖 <b>¡Plan familiar ${accionTxt} por ${autorTxt}!</b>\n\n📌 <b>${eventData.titulo}</b>\n📅 Fecha: ${textoFechaEvento}\n📍 Lugar: ${eventData.lugar}\n${eventData.descripcion ? `📝 <i>"${eventData.descripcion}"</i>\n` : ''}\n👉 <a href="https://familiabarnuevoapp.web.app/?tab=eventos">Entrar a la app para confirmar</a>`;
-        
+        const targetId = localId || 'plan';
+
         const replyMarkup = {
           inline_keyboard: [
             [
-              { text: "🍖 Ver Quedada / Asistir", url: "https://familiabarnuevoapp.web.app/?tab=eventos" }
+              { text: "🙋‍♂️ ¡Me apunto!", callback_data: `rsvp:${targetId}:apunto` },
+              { text: "☕ Cafés", callback_data: `rsvp:${targetId}:cafes` },
+              { text: "❌ No puedo", callback_data: `rsvp:${targetId}:no` }
+            ],
+            [
+              { text: "📲 Ver en FamilyApp", url: "https://familiabarnuevoapp.web.app/?tab=eventos" }
             ]
           ]
         };
+
+        const msgTg = `🍖 <b>¡Quedada familiar ${accionTxt} por ${autorTxt}!</b>\n\n` +
+          `📌 <b>${eventData.titulo}</b>\n` +
+          `📅 Fecha: <b>${textoFechaEvento}</b>\n` +
+          `📍 Lugar: <b>${eventData.lugar}</b>\n` +
+          (eventData.descripcion ? `📝 <i>"${eventData.descripcion}"</i>\n\n` : '\n') +
+          `👇 ¡Confirma tu asistencia con un toque:`;
+
         enviarMensajeTelegram(msgTg, replyMarkup);
       }
 
@@ -4469,21 +4556,29 @@ export default function App() {
       if (isCloudMode && user && !isLocalMode) {
         try {
           const col = collection(db, 'artifacts', appId, 'public', 'data', 'eventos');
-          await addDoc(col, { ...evtObj, creadoPor: usuarioActivo, creadoEl: new Date().toISOString() });
+          const docRef = await addDoc(col, { ...evtObj, creadoPor: usuarioActivo, creadoEl: new Date().toISOString() });
+          const eventId = docRef.id;
           
           const replyMarkup = {
             inline_keyboard: [
               [
-                { text: "🍖 Ver Quedada / Asistir", url: "https://familiabarnuevoapp.web.app/?tab=eventos" }
+                { text: "🙋‍♂️ ¡Me apunto!", callback_data: `rsvp:${eventId}:apunto` },
+                { text: "☕ Cafés", callback_data: `rsvp:${eventId}:cafes` },
+                { text: "❌ No puedo", callback_data: `rsvp:${eventId}:no` }
+              ],
+              [
+                { text: "🍖 Ver Quedada en la App", url: "https://familiabarnuevoapp.web.app/?tab=eventos" }
               ]
             ]
           };
           enviarMensajeTelegram(
-            `🍖 <b>Nueva Quedada Familiar programada</b>\n\n` +
+            `🍖 <b>Nueva Quedada Familiar programada con el Asistente</b>\n\n` +
             `🎉 <b>${evtObj.titulo}</b>\n` +
-            `📅 <b>Fecha:</b> ${formatearFechaStr(evtObj.fecha)} a las ${evtObj.hora}\n` +
+            `📅 <b>Fecha:</b> ${formatearFechaStr(evtObj.fecha)} ${evtObj.hora ? `a las ${evtObj.hora}` : ''}\n` +
             `📍 <b>Lugar:</b> ${evtObj.lugar}\n` +
-            `\n👉 <a href="https://familiabarnuevoapp.web.app/?tab=eventos">Abrir App para apuntarte</a>`,
+            (evtObj.descripcion ? `📝 <i>${evtObj.descripcion}</i>\n` : '') +
+            `👥 <b>Asistentes confirmados:</b>\n• ${usuarioActivo} 🙋‍♂️\n\n` +
+            `👇 <i>Pulsa un botón para confirmar tu asistencia directamente desde Telegram:</i>`,
             replyMarkup
           );
           triggerToast('✨ ¡Quedada / evento creado con éxito!');
@@ -5442,21 +5537,25 @@ export default function App() {
         ? 'Alcalá (Esgaravita)'
         : nuevaUbicacion);
 
+    const nowIso = new Date().toISOString();
+    const newMeta = {
+      ubicacion: ubicacionFinal,
+      modo: esManual ? 'manual' : 'traslado',
+      esManual: !!esManual,
+      fechaCambio: nowIso,
+      actualizadoPor: usuarioActivo,
+      fecha: nowIso
+    };
+
     setUbicacionActualPadres(ubicacionFinal);
+    setMetaUbicacionPadres(newMeta);
     localStorage.setItem('family_app_ubicacion_padres', ubicacionFinal);
-    if (esManual) {
-      localStorage.setItem('family_app_ubicacion_padres_manual', new Date().toISOString());
-    }
+    localStorage.setItem('family_app_ubicacion_padres_meta', JSON.stringify(newMeta));
 
     if (isCloudMode && user && !isLocalMode) {
       try {
         const docRef = doc(db, 'artifacts', appId, 'public', 'config_ubicacion_padres');
-        await setDoc(docRef, {
-          ubicacion: ubicacionFinal,
-          actualizadoPor: usuarioActivo,
-          esManual: !!esManual,
-          fecha: new Date().toISOString()
-        }, { merge: true });
+        await setDoc(docRef, newMeta, { merge: true });
       } catch (e) {
         console.warn(e);
       }
@@ -5487,15 +5586,19 @@ export default function App() {
           : ultimo.destino);
 
       if (destNorm && destNorm !== ubicacionActualPadres) {
-        const manualIso = localStorage.getItem('family_app_ubicacion_padres_manual');
-        const fechaHoraTraslado = `${ultimo.fecha}T${ultimo.hora || '23:59'}:00`;
-        // Si no hay cambio manual o si el traslado ocurrió después del cambio manual, sincronizar automáticamente a Firestore y local
-        if (!manualIso || manualIso < fechaHoraTraslado) {
-          handleChangeUbicacionPadres(destNorm, false, false);
+        const fechaHoraTraslado = `${ultimo.fecha}T${ultimo.hora || '12:00'}:00.000Z`;
+        const esManual = metaUbicacionPadres?.modo === 'manual' || metaUbicacionPadres?.esManual === true;
+        const fechaCambioManual = metaUbicacionPadres?.fechaCambio || metaUbicacionPadres?.fecha;
+
+        // Si el usuario fijó la ubicación MANUALMENTE, NUNCA sobreescribir a menos que haya un traslado posterior a ese cambio manual
+        if (esManual && fechaCambioManual && fechaCambioManual >= fechaHoraTraslado) {
+          return;
         }
+
+        handleChangeUbicacionPadres(destNorm, false, false);
       }
     }
-  }, [trasladosPadres, ubicacionActualPadres]);
+  }, [trasladosPadres, ubicacionActualPadres, metaUbicacionPadres]);
 
   const handleEnviarResumenTrasladosTelegram = async () => {
     const pendientes = trasladosPadres
@@ -11390,7 +11493,7 @@ export default function App() {
                   <input type="url" placeholder="URL ubicación (Google Maps, opcional)..." className="w-full p-2.5 border rounded-xl" value={newEvent.ubicacionUrl} onChange={(e) => setNewEvent({ ...newEvent, ubicacionUrl: e.target.value })} />
                   <textarea placeholder="Descripción del plan..." rows="2" className="w-full p-2.5 border rounded-xl" value={newEvent.descripcion} onChange={(e) => setNewEvent({ ...newEvent, descripcion: e.target.value })} />
                   
-                  <div className="bg-sky-50 border border-sky-150 p-2.5 rounded-xl">
+                  <div className="bg-sky-50 border border-sky-150 p-2.5 rounded-xl space-y-2">
                     <label className="flex items-center gap-2 cursor-pointer text-slate-700">
                       <input
                         type="checkbox"
@@ -11399,9 +11502,23 @@ export default function App() {
                         onChange={(e) => setNotifyTelegramOnEvent(e.target.checked)}
                       />
                       <span className="text-[11px] font-semibold text-sky-900 flex items-center gap-1.5">
-                        <span>✈️</span> Notificar este plan al grupo de Telegram (Laos)
+                        <span>✈️</span> Enviar a Telegram con botones interactivos (¡Me apunto! / Cafés / No)
                       </span>
                     </label>
+
+                    {notifyTelegramOnEvent && (
+                      <label className="flex items-center gap-2 cursor-pointer text-slate-700 pl-6 pt-1 border-t border-sky-100">
+                        <input
+                          type="checkbox"
+                          className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                          checked={pollOnEvent}
+                          onChange={(e) => setPollOnEvent(e.target.checked)}
+                        />
+                        <span className="text-[11px] font-medium text-indigo-950 flex items-center gap-1.5">
+                          <span>📊</span> Enviar también encuesta oficial de Telegram
+                        </span>
+                      </label>
+                    )}
                   </div>
 
                   <div className="flex justify-end gap-2 pt-2 border-t">

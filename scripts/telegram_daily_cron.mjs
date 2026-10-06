@@ -69,6 +69,39 @@ async function enviarMensajeTelegram(texto, replyMarkup = null) {
   return data && data.ok;
 }
 
+export function resolverUbicacionPadres(snapUbicacion, trasladosPadres, hoyIso) {
+  const meta = (snapUbicacion && snapUbicacion.exists()) ? snapUbicacion.data() : {};
+  let ubicacion = meta.ubicacion || 'Alcalá (Esgaravita)';
+  const esManual = meta.modo === 'manual' || meta.esManual === true;
+  const fechaCambioManual = meta.fechaCambio || meta.fecha;
+
+  // Filtrar traslados que ya ocurrieron (fecha <= hoy)
+  const pasados = (trasladosPadres || [])
+    .filter(t => t.fecha && (t.fecha <= hoyIso || t.estado === 'realizado'))
+    .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '') || (b.hora || '').localeCompare(a.hora || ''));
+
+  if (pasados.length > 0) {
+    const ultimo = pasados[0];
+    const fechaHoraTraslado = `${ultimo.fecha}T${ultimo.hora || '12:00'}:00.000Z`;
+    const d = (ultimo.destino || '').toLowerCase();
+    const destNorm = d.includes('madrid')
+      ? 'Madrid'
+      : (d.includes('alcalá') || d.includes('alcala') || d.includes('esgaravita')
+        ? 'Alcalá (Esgaravita)'
+        : ultimo.destino);
+
+    // Si la ubicación se fijó manualmente y ese cambio manual es más reciente que el traslado:
+    if (esManual && fechaCambioManual && fechaCambioManual >= fechaHoraTraslado) {
+      return ubicacion;
+    }
+
+    // Si no es manual o hay un traslado más reciente que el cambio manual:
+    return destNorm;
+  }
+
+  return ubicacion;
+}
+
 export async function runDailyDigest(force = false) {
   console.log(`[${new Date().toISOString()}] Iniciando comprobación matutina de FamilyApp...`);
 
@@ -137,9 +170,7 @@ export async function runDailyDigest(force = false) {
   const citasMedicas = snapCitas.docs.map(d => ({ id: d.id, ...d.data() }));
   const trasladosPadres = snapTraslados.docs.map(d => ({ id: d.id, ...d.data() }));
   const vacaciones = snapVacaciones.docs.map(d => ({ id: d.id, ...d.data() }));
-  const ubicacionPadres = (snapUbicacion && snapUbicacion.exists() && snapUbicacion.data()?.ubicacion)
-    ? snapUbicacion.data().ubicacion
-    : 'Alcalá (Esgaravita)';
+  const ubicacionPadres = resolverUbicacionPadres(snapUbicacion, trasladosPadres, hoyIso);
 
   // 2. Filtrar celebraciones y avisos de hoy y mañana
   const cumplesDeHoy = cumpleanos.filter(c => {

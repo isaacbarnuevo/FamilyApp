@@ -46,7 +46,7 @@ async function configurarWebhook(url) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       url: url,
-      allowed_updates: ['message', 'edited_message', 'poll_answer']
+      allowed_updates: ['message', 'edited_message', 'poll_answer', 'callback_query']
     })
   });
   const data = await res.json();

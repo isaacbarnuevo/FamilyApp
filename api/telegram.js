@@ -1,7 +1,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
 import { getFirestore, collection, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore';
-import { runDailyDigest } from '../scripts/telegram_daily_cron.mjs';
+import { runDailyDigest, resolverUbicacionPadres } from '../scripts/telegram_daily_cron.mjs';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCPc3BTDzRFts7TJYhEbrFjZ-fre5nsmXQ",
@@ -91,6 +91,44 @@ async function enviarRespuestaTelegram(chatId, texto, replyToMessageId = null) {
   }
 }
 
+async function answerCallbackQuery(callbackQueryId, text, showAlert = false) {
+  try {
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callback_query_id: callbackQueryId,
+        text: text,
+        show_alert: showAlert
+      })
+    });
+  } catch (err) {
+    console.error('Error answering callback query:', err);
+  }
+}
+
+async function editMessageTextTelegram(chatId, messageId, texto, replyMarkup = null) {
+  try {
+    const payload = {
+      chat_id: chatId,
+      message_id: messageId,
+      text: texto,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true
+    };
+    if (replyMarkup) {
+      payload.reply_markup = replyMarkup;
+    }
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  } catch (err) {
+    console.error('Error editMessageText en Telegram:', err);
+  }
+}
+
 async function obtenerDatosFirestore() {
   const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
   const auth = getAuth(app);
@@ -114,15 +152,14 @@ async function obtenerDatosFirestore() {
     getDoc(docUbicacion)
   ]);
 
-  const ubicacionPadres = (snapUbicacion && snapUbicacion.exists() && snapUbicacion.data()?.ubicacion)
-    ? snapUbicacion.data().ubicacion
-    : 'Alcalá (Esgaravita)';
+  const trasladosList = snapTraslados.docs.map(d => ({ id: d.id, ...d.data() }));
+  const ubicacionPadres = resolverUbicacionPadres(snapUbicacion, trasladosList, getFechaHoySpain());
 
   return {
     cumpleanos: snapCumples.docs.map(d => ({ id: d.id, ...d.data() })),
     integrantes: snapMiembros.docs.map(d => ({ id: d.id, ...d.data() })),
     citasMedicas: snapCitas.docs.map(d => ({ id: d.id, ...d.data() })),
-    trasladosPadres: snapTraslados.docs.map(d => ({ id: d.id, ...d.data() })),
+    trasladosPadres: trasladosList,
     eventos: snapEventos.docs.map(d => ({ id: d.id, ...d.data() })),
     vacaciones: snapVacaciones.docs.map(d => ({ id: d.id, ...d.data() })),
     ubicacionPadres
@@ -209,6 +246,134 @@ async function procesarVotoEncuesta(pollAnswer) {
   console.log(`[Telegram Poll] Voto registrado para ${votanteNombre}: ${currentVotos[votanteNombre] || 'retirado'}`);
 }
 
+async function procesarCallbackQuery(callbackQuery) {
+  const data = callbackQuery.data || '';
+  const queryId = callbackQuery.id;
+  const user = callbackQuery.from;
+
+  if (!data.startsWith('rsvp:')) {
+    await answerCallbackQuery(queryId, 'Acción no soportada');
+    return;
+  }
+
+  const parts = data.split(':');
+  const eventId = parts[1];
+  const accion = parts[2]; // 'apunto', 'cafes', 'no'
+
+  if (!eventId || !accion) {
+    await answerCallbackQuery(queryId, 'Datos de quedada inválidos');
+    return;
+  }
+
+  const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  try {
+    await signInAnonymously(auth);
+  } catch (e) {}
+
+  const colEventos = collection(db, 'artifacts', APP_ID, 'public', 'data', 'eventos');
+  let eventDoc = null;
+  let eventDocId = eventId;
+
+  // Intentar leer por id directo
+  try {
+    const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'eventos', eventId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      eventDoc = snap.data();
+    }
+  } catch (e) {}
+
+  if (!eventDoc) {
+    // Si no coincide id directo, buscar en la colección
+    const snapAll = await getDocs(colEventos);
+    const found = snapAll.docs.find(d => d.id === eventId || String(d.data().pollId || '') === eventId || String(d.data().poll_id || '') === eventId);
+    if (found) {
+      eventDoc = found.data();
+      eventDocId = found.id;
+    }
+  }
+
+  if (!eventDoc) {
+    await answerCallbackQuery(queryId, '⚠️ No se encontró la quedada en FamilyApp.');
+    return;
+  }
+
+  // Identificar el integrante familiar
+  const snapMiembros = await getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'miembros'));
+  const integrantes = snapMiembros.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  const firstName = (user.first_name || '').trim().toLowerCase();
+  const username = (user.username || '').trim().toLowerCase();
+
+  const match = integrantes.find(i => {
+    const n = (i.nombre || '').toLowerCase();
+    const alias = (i.alias || '').toLowerCase();
+    const tg = (i.telegram || i.telegramUser || '').toLowerCase().replace('@', '');
+    return (
+      (firstName && (n.includes(firstName) || firstName.includes(n))) ||
+      (username && tg && tg === username) ||
+      (alias && firstName && (alias.includes(firstName) || firstName.includes(alias)))
+    );
+  });
+
+  const votanteNombre = match?.nombre || user.first_name || user.username || `Usuario ${user.id}`;
+  let currentAsistentes = Array.isArray(eventDoc.asistentes) ? [...eventDoc.asistentes] : [];
+  let currentVotos = { ...(eventDoc.votos || {}) };
+  let feedbackText = '';
+
+  if (accion === 'apunto') {
+    if (!currentAsistentes.includes(votanteNombre)) currentAsistentes.push(votanteNombre);
+    currentVotos[votanteNombre] = '¡Me apunto! 🙋‍♂️';
+    feedbackText = `🎉 ¡Te has apuntado a "${eventDoc.titulo}"!`;
+  } else if (accion === 'cafes') {
+    if (!currentAsistentes.includes(votanteNombre)) currentAsistentes.push(votanteNombre);
+    currentVotos[votanteNombre] = 'Llego a los cafés ☕';
+    feedbackText = `☕ ¡Apuntado a los cafés para "${eventDoc.titulo}"!`;
+  } else if (accion === 'no') {
+    currentAsistentes = currentAsistentes.filter(a => a !== votanteNombre);
+    currentVotos[votanteNombre] = 'No puedo esta vez 😔';
+    feedbackText = `😔 Has cancelado tu asistencia a "${eventDoc.titulo}".`;
+  }
+
+  // Guardar en Firestore
+  await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'eventos', eventDocId), {
+    asistentes: currentAsistentes,
+    votos: currentVotos,
+    actualizadoEl: new Date().toISOString()
+  });
+
+  // Notificar al usuario con popup
+  await answerCallbackQuery(queryId, feedbackText);
+
+  // Actualizar el mensaje de Telegram para mostrar la lista en vivo
+  if (callbackQuery.message) {
+    const chatId = callbackQuery.message.chat.id;
+    const messageId = callbackQuery.message.message_id;
+
+    const listaAsistentesStr = currentAsistentes.length > 0
+      ? currentAsistentes.map(a => `• ${a} ${currentVotos[a]?.includes('cafés') ? '☕' : '🙋‍♂️'}`).join('\n')
+      : '• <i>Ninguno confirmado aún</i>';
+
+    const fechaTexto = (eventDoc.fechaFin && eventDoc.fechaFin !== eventDoc.fecha)
+      ? `Del ${formatearFechaBonita(eventDoc.fecha)} al ${formatearFechaBonita(eventDoc.fechaFin)}`
+      : `${formatearFechaBonita(eventDoc.fecha)}${eventDoc.hora ? ` a las ${eventDoc.hora}` : ''}`;
+
+    const nuevoTexto =
+      `🍖 <b>¡Quedada Familiar: ${eventDoc.titulo}!</b>\n\n` +
+      `📅 Fecha: <b>${fechaTexto}</b>\n` +
+      `📍 Lugar: <b>${eventDoc.lugar || 'Por concretar'}</b>\n` +
+      (eventDoc.descripcion ? `📝 <i>"${eventDoc.descripcion}"</i>\n\n` : '\n') +
+      `👥 <b>Asistentes confirmados (${currentAsistentes.length}):</b>\n` +
+      `${listaAsistentesStr}\n\n` +
+      `👇 ¡Toca un botón para confirmar o cambiar tu asistencia:`;
+
+    await editMessageTextTelegram(chatId, messageId, nuevoTexto, callbackQuery.message.reply_markup);
+  }
+}
+
 export default async function handler(req, res) {
   // Manejo de peticiones GET de prueba/health check o ejecución de CRON
   if (req.method === 'GET') {
@@ -232,6 +397,17 @@ export default async function handler(req, res) {
   const update = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
   if (!update) {
     return res.status(200).json({ ok: true, ignored: 'Empty update' });
+  }
+
+  // Manejar clics en botones de confirmación (RSVP) de Quedadas en Telegram
+  if (update.callback_query) {
+    try {
+      await procesarCallbackQuery(update.callback_query);
+      return res.status(200).json({ ok: true, type: 'callback_query_processed' });
+    } catch (cbErr) {
+      console.error('Error procesando callback_query:', cbErr);
+      return res.status(200).json({ ok: false, error: cbErr.message });
+    }
   }
 
   // Manejar respuestas/votos a encuestas de Telegram automáticamente
