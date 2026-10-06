@@ -6730,6 +6730,16 @@ export default function App() {
     return list;
   }, [integrantes, usuarioActivo]);
 
+  const integrantesActivos = useMemo(() => {
+    return (integrantes || []).filter(i => {
+      if (!i) return false;
+      if (i.rol === 'Abuelos' || i.tipoFamiliar === 'Abuelos' || i.esFallecido) return false;
+      const esAbuelo = (integrantes || []).some(otro => otro.rol === 'Padres' && otro.padres && otro.padres.includes(i.nombre));
+      if (esAbuelo) return false;
+      return true;
+    });
+  }, [integrantes]);
+
   return (
     <div className="min-h-screen text-slate-800 font-sans pb-20 md:pb-8 bg-slate-50">
       
@@ -7744,10 +7754,14 @@ export default function App() {
                                           <XCircle className="w-3.5 h-3.5" />
                                         </button>
                                         <p className="font-bold text-xs truncate mt-2">{abuelo.nombre}</p>
-                                        <span className="bg-amber-700/40 text-amber-100 text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase mt-1 inline-block">Abuelo/a</span>
-                                        {abuelo.santo && (
+                                        <div className="flex items-center justify-center gap-1 mt-1">
+                                          <span className="bg-amber-700/40 text-amber-100 text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase inline-block">Abuelo/a</span>
+                                          <span className="text-[10px]" title="En el recuerdo">🕊️</span>
+                                        </div>
+                                        {abuelo.santo && !abuelo.santo.toLowerCase().includes('no') && !abuelo.santo.toLowerCase().includes('desconocido') && (
                                           <p className="text-[8px] text-amber-200 mt-1 truncate">✨ Santo: {abuelo.santo.split(' ')[0]}</p>
                                         )}
+                                        <p className="text-[8px] text-amber-100/80 mt-0.5 font-medium italic">En el recuerdo 🕊️</p>
                                       </div>
                                     ))}
                                     {Array.from({ length: Math.max(0, 2 - abuelosDeRama.length) }).map((_, slotIdx) => (
@@ -7814,7 +7828,7 @@ export default function App() {
                                 </button>
                                 <p className="font-bold text-sm truncate mt-2">{padre.nombre}</p>
                                 <span className="bg-rose-700/40 text-rose-100 text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase mt-1 inline-block">Progenitor</span>
-                                {padre.santo && (
+                                {padre.santo && !padre.santo.toLowerCase().includes('no') && !padre.santo.toLowerCase().includes('desconocido') && (
                                   <p className="text-[8px] text-rose-200 mt-1 truncate">✨ Santo: {padre.santo.split(' ')[0]}</p>
                                 )}
                               </div>
@@ -7915,7 +7929,7 @@ export default function App() {
 
                                   <p className="font-bold text-xs text-slate-800 truncate">{hermanoActivo.nombre}</p>
                                   <span className="bg-emerald-100 text-emerald-800 text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase">Hermano</span>
-                                  {hermanoActivo.santo && (
+                                  {hermanoActivo.santo && !hermanoActivo.santo.toLowerCase().includes('no') && !hermanoActivo.santo.toLowerCase().includes('desconocido') && (
                                     <p className="text-[8px] text-slate-400 mt-1 truncate">✨ Santo: {hermanoActivo.santo.split(' ')[0]}</p>
                                   )}
                                 </div>
@@ -7942,7 +7956,7 @@ export default function App() {
                                       </button>
                                       <p className="font-bold text-xs text-slate-800 truncate">{parejaActiva.nombre}</p>
                                       <span className="bg-indigo-100 text-indigo-800 text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase">Cuñado/a</span>
-                                      {parejaActiva.santo && (
+                                      {parejaActiva.santo && !parejaActiva.santo.toLowerCase().includes('no') && !parejaActiva.santo.toLowerCase().includes('desconocido') && (
                                         <p className="text-[8px] text-slate-400 mt-1 truncate">✨ Santo: {parejaActiva.santo.split(' ')[0]}</p>
                                       )}
                                     </div>
@@ -8451,7 +8465,7 @@ export default function App() {
                                           Estado de votos y confirmaciones ({prop.asistentes?.length || 0} confirmados):
                                         </p>
                                         <div className="flex flex-wrap gap-1.5">
-                                          {integrantes.map(int => {
+                                          {integrantesActivos.map(int => {
                                             const voto = votosObj[int.nombre];
                                             const asiste = prop.asistentes?.includes(int.nombre);
                                             return (
@@ -8547,7 +8561,7 @@ export default function App() {
                                     <div className="md:w-72 bg-slate-50 p-4 rounded-xl border border-slate-200">
                                       <p className="text-xs font-bold text-slate-600 mb-2">Confirmados ({evt.asistentes?.length || 0}):</p>
                                       <div className="flex flex-wrap gap-1">
-                                        {integrantes.map(int => {
+                                        {integrantesActivos.map(int => {
                                           const asiste = evt.asistentes?.includes(int.nombre);
                                           return (
                                             <button
@@ -10421,6 +10435,235 @@ export default function App() {
                     })()}
                   </div>
                 )}
+
+                {/* ================= PÁGINA: ÁLBUM DE RECUERDOS FAMILIAR (FASE 5) ================= */}
+                {activeTab === 'album' && (
+                  <div className="space-y-6 animate-fadeIn">
+                    {/* Cabecera del Álbum */}
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-gradient-to-r from-purple-50 via-pink-50 to-amber-50 p-6 rounded-3xl border border-purple-150 shadow-sm">
+                      <div>
+                        <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-purple-700 bg-purple-100/70 px-2.5 py-0.5 rounded-full mb-1">
+                          <span>📸</span> Fase 5: Álbum Colaborativo
+                        </div>
+                        <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                          Álbum de Recuerdos de la Familia
+                        </h2>
+                        <p className="text-xs text-slate-600 mt-1">
+                          Fotos de barbacoas, vacaciones en Mazarrón y Sevilla, cumpleaños y recuerdos entrañables con reacciones ❤️ y comentarios.
+                        </p>
+                      </div>
+
+                      <div className="flex gap-2 flex-wrap">
+                        <button
+                          onClick={() => {
+                            setNuevaFoto({
+                              titulo: '',
+                              lugar: '',
+                              fecha: new Date().toISOString().split('T')[0],
+                              categoria: 'barbacoas',
+                              autor: matchedMember?.nombre || usuarioActivo || 'Familiar',
+                              imagenUrl: '',
+                              descripcion: ''
+                            });
+                            setShowSubirFotoModal(true);
+                          }}
+                          className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-md shrink-0 flex items-center gap-1.5 transition"
+                        >
+                          <Plus className="w-4 h-4" /> Subir Foto / Recuerdo
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Filtros de Categoría */}
+                    <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                      {[
+                        { id: 'todos', label: 'Todas las Fotos', icon: '🖼️' },
+                        { id: 'barbacoas', label: 'Barbacoas & Quedadas', icon: '🍖' },
+                        { id: 'vacaciones', label: 'Vacaciones Verano', icon: '🌴' },
+                        { id: 'cumples', label: 'Cumpleaños & Santos', icon: '🎂' },
+                        { id: 'recuerdos', label: 'Recuerdos de Familia', icon: '🕰️' }
+                      ].map(f => (
+                        <button
+                          key={f.id}
+                          onClick={() => setFiltroAlbum(f.id)}
+                          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+                            filtroAlbum === f.id
+                              ? 'bg-purple-600 text-white shadow-xs'
+                              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span>{f.icon}</span>
+                          <span>{f.label}</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Rejilla de Fotografías */}
+                    {(() => {
+                      const fotosFiltradas = (Array.isArray(fotosAlbum) ? fotosAlbum : []).filter(f => {
+                        if (filtroAlbum === 'todos') return true;
+                        return f.categoria === filtroAlbum;
+                      });
+
+                      if (fotosFiltradas.length === 0) {
+                        return (
+                          <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-3">
+                            <div className="text-4xl">📸</div>
+                            <h3 className="font-bold text-slate-800 text-base">No hay fotos en esta categoría aún</h3>
+                            <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                              Sé el primero en subir un recuerdo familiar para que todos los hermanos puedan verlo y comentar.
+                            </p>
+                            <button
+                              onClick={() => setShowSubirFotoModal(true)}
+                              className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs py-2 px-4 rounded-xl shadow-xs inline-flex items-center gap-1.5"
+                            >
+                              <Plus className="w-4 h-4" /> Subir la Primera Foto
+                            </button>
+                          </div>
+                        );
+                      }
+
+                      const miNombre = matchedMember?.nombre || usuarioActivo || 'Familiar';
+
+                      return (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                          {fotosFiltradas.map(foto => {
+                            const likesArray = Array.isArray(foto.likes) ? foto.likes : [];
+                            const yaDioLike = likesArray.includes(miNombre);
+                            const comentarios = Array.isArray(foto.comentarios) ? foto.comentarios : [];
+
+                            return (
+                              <div
+                                key={foto.id}
+                                className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden flex flex-col hover:shadow-md transition duration-200"
+                              >
+                                {/* Imagen con Lightbox Click */}
+                                <div
+                                  className="relative aspect-video bg-slate-900 overflow-hidden cursor-pointer group"
+                                  onClick={() => setFotoSeleccionadaLightbox(foto)}
+                                >
+                                  <img
+                                    src={foto.imagenUrl}
+                                    alt={foto.titulo}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                                    loading="lazy"
+                                  />
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 opacity-0 group-hover:opacity-100 transition duration-200 flex items-end p-3">
+                                    <span className="text-white text-xs font-bold flex items-center gap-1">
+                                      <span>🔍</span> Click para ver a tamaño completo
+                                    </span>
+                                  </div>
+                                  {foto.categoria && (
+                                    <span className="absolute top-3 left-3 bg-black/50 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-white/20">
+                                      {foto.categoria === 'barbacoas' ? '🍖 Barbacoa'
+                                        : foto.categoria === 'vacaciones' ? '🌴 Vacaciones'
+                                        : foto.categoria === 'cumples' ? '🎂 Cumple'
+                                        : '🕰️ Recuerdo'}
+                                    </span>
+                                  )}
+                                  {foto.lugar && (
+                                    <span className="absolute top-3 right-3 bg-white/90 backdrop-blur-md text-slate-800 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs">
+                                      📍 {foto.lugar}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Contenido y Detalles */}
+                                <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+                                  <div>
+                                    <div className="flex items-start justify-between gap-2">
+                                      <h3 className="font-bold text-slate-900 text-sm">{foto.titulo}</h3>
+                                      <button
+                                        onClick={() => handleDeleteFoto(foto.id)}
+                                        className="text-slate-300 hover:text-rose-500 p-1 rounded-lg transition"
+                                        title="Eliminar foto"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 mt-0.5">
+                                      📅 {formatearFechaStr(foto.fecha)} • Por <span className="font-bold text-slate-600">{foto.autor || 'Familiar'}</span>
+                                    </div>
+                                    {foto.descripcion && (
+                                      <p className="text-xs text-slate-600 mt-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100 leading-relaxed">
+                                        "{foto.descripcion}"
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  {/* Barra de Acciones: Reacciones y Telegram */}
+                                  <div className="border-t border-slate-100 pt-3 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                      <button
+                                        onClick={() => handleToggleLikeFoto(foto.id)}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                                          yaDioLike
+                                            ? 'bg-rose-50 text-rose-600 border border-rose-200'
+                                            : 'bg-slate-50 text-slate-500 hover:bg-rose-50 hover:text-rose-600'
+                                        }`}
+                                        title={likesArray.length > 0 ? `Les gusta a: ${likesArray.join(', ')}` : 'Dar me gusta'}
+                                      >
+                                        <Heart className={`w-4 h-4 ${yaDioLike ? 'fill-rose-500 text-rose-500' : ''}`} />
+                                        <span>{likesArray.length}</span>
+                                      </button>
+
+                                      <button
+                                        onClick={() => handleCompartirFotoTelegram(foto)}
+                                        className="text-sky-600 hover:text-sky-700 bg-sky-50 hover:bg-sky-100 px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition"
+                                        title="Avisar en Telegram"
+                                      >
+                                        <span>✈️</span> Compartir
+                                      </button>
+                                    </div>
+
+                                    {/* Comentarios */}
+                                    <div className="space-y-2 pt-1">
+                                      {comentarios.length > 0 && (
+                                        <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                                          {comentarios.map(c => (
+                                            <div key={c.id} className="text-[11px] bg-slate-50 p-2 rounded-xl">
+                                              <span className="font-bold text-slate-800">{c.autor}: </span>
+                                              <span className="text-slate-600">{c.texto}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+
+                                      {/* Añadir comentario */}
+                                      <div className="flex gap-1.5">
+                                        <input
+                                          type="text"
+                                          placeholder="Escribe un comentario..."
+                                          value={nuevoComentarioTexto[foto.id] || ''}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setNuevoComentarioTexto(prev => ({ ...prev, [foto.id]: val }));
+                                          }}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                              handleAñadirComentarioFoto(foto.id, nuevoComentarioTexto[foto.id]);
+                                            }
+                                          }}
+                                          className="flex-1 text-[11px] p-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-purple-400"
+                                        />
+                                        <button
+                                          onClick={() => handleAñadirComentarioFoto(foto.id, nuevoComentarioTexto[foto.id])}
+                                          className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10px] px-2.5 py-1 rounded-xl transition shrink-0"
+                                        >
+                                          Enviar
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
               </>
             )}
           </main>
@@ -10610,236 +10853,6 @@ export default function App() {
                     </div>
                   </div>
                 )}
-
-                {/* ================= PÁGINA: ÁLBUM DE RECUERDOS FAMILIAR (FASE 5) ================= */}
-                {activeTab === 'album' && (
-                  <div className="space-y-6 animate-fadeIn">
-                    {/* Cabecera del Álbum */}
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-gradient-to-r from-purple-50 via-pink-50 to-amber-50 p-6 rounded-3xl border border-purple-150 shadow-sm">
-                      <div>
-                        <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-purple-700 bg-purple-100/70 px-2.5 py-0.5 rounded-full mb-1">
-                          <span>📸</span> Fase 5: Álbum Colaborativo
-                        </div>
-                        <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                          Álbum de Recuerdos de la Familia
-                        </h2>
-                        <p className="text-xs text-slate-600 mt-1">
-                          Fotos de barbacoas, vacaciones en Mazarrón y Sevilla, cumpleaños y recuerdos entrañables con reacciones ❤️ y comentarios.
-                        </p>
-                      </div>
-
-                      <div className="flex gap-2 flex-wrap">
-                        <button
-                          onClick={() => {
-                            setNuevaFoto({
-                              titulo: '',
-                              lugar: '',
-                              fecha: new Date().toISOString().split('T')[0],
-                              categoria: 'barbacoas',
-                              autor: matchedMember?.nombre || usuarioActivo || 'Familiar',
-                              imagenUrl: '',
-                              descripcion: ''
-                            });
-                            setShowSubirFotoModal(true);
-                          }}
-                          className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-md shrink-0 flex items-center gap-1.5 transition"
-                        >
-                          <Plus className="w-4 h-4" /> Subir Foto / Recuerdo
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Filtros de Categoría */}
-                    <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                      {[
-                        { id: 'todos', label: 'Todas las Fotos', icon: '🖼️' },
-                        { id: 'barbacoas', label: 'Barbacoas & Quedadas', icon: '🍖' },
-                        { id: 'vacaciones', label: 'Vacaciones Verano', icon: '🌴' },
-                        { id: 'cumples', label: 'Cumpleaños & Santos', icon: '🎂' },
-                        { id: 'recuerdos', label: 'Recuerdos de Familia', icon: '🕰️' }
-                      ].map(f => (
-                        <button
-                          key={f.id}
-                          onClick={() => setFiltroAlbum(f.id)}
-                          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
-                            filtroAlbum === f.id
-                              ? 'bg-purple-600 text-white shadow-xs'
-                              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                          }`}
-                        >
-                          <span>{f.icon}</span>
-                          <span>{f.label}</span>
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Rejilla de Fotografías */}
-                    {(() => {
-                      const fotosFiltradas = fotosAlbum.filter(f => {
-                        if (filtroAlbum === 'todos') return true;
-                        return f.categoria === filtroAlbum;
-                      });
-
-                      if (fotosFiltradas.length === 0) {
-                        return (
-                          <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-3">
-                            <div className="text-4xl">📸</div>
-                            <h3 className="font-bold text-slate-800 text-base">No hay fotos en esta categoría aún</h3>
-                            <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                              Sé el primero en subir un recuerdo familiar para que todos los hermanos puedan verlo y comentar.
-                            </p>
-                            <button
-                              onClick={() => setShowSubirFotoModal(true)}
-                              className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs py-2 px-4 rounded-xl shadow-xs inline-flex items-center gap-1.5"
-                            >
-                              <Plus className="w-4 h-4" /> Subir la Primera Foto
-                            </button>
-                          </div>
-                        );
-                      }
-
-                      const miNombre = matchedMember?.nombre || usuarioActivo || 'Familiar';
-
-                      return (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                          {fotosFiltradas.map(foto => {
-                            const likesArray = Array.isArray(foto.likes) ? foto.likes : [];
-                            const yaDioLike = likesArray.includes(miNombre);
-                            const comentarios = Array.isArray(foto.comentarios) ? foto.comentarios : [];
-
-                            return (
-                              <div
-                                key={foto.id}
-                                className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden flex flex-col hover:shadow-md transition duration-200"
-                              >
-                                {/* Imagen con Lightbox Click */}
-                                <div
-                                  className="relative aspect-video bg-slate-900 overflow-hidden cursor-pointer group"
-                                  onClick={() => setFotoSeleccionadaLightbox(foto)}
-                                >
-                                  <img
-                                    src={foto.imagenUrl}
-                                    alt={foto.titulo}
-                                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                                    loading="lazy"
-                                  />
-                                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 opacity-0 group-hover:opacity-100 transition duration-200 flex items-end p-3">
-                                    <span className="text-white text-xs font-bold flex items-center gap-1">
-                                      <span>🔍</span> Click para ver a tamaño completo
-                                    </span>
-                                  </div>
-                                  {foto.categoria && (
-                                    <span className="absolute top-3 left-3 bg-black/50 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-white/20">
-                                      {foto.categoria === 'barbacoas' ? '🍖 Barbacoa'
-                                        : foto.categoria === 'vacaciones' ? '🌴 Vacaciones'
-                                        : foto.categoria === 'cumples' ? '🎂 Cumple'
-                                        : '🕰️ Recuerdo'}
-                                    </span>
-                                  )}
-                                  {foto.lugar && (
-                                    <span className="absolute top-3 right-3 bg-white/90 backdrop-blur-md text-slate-800 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs">
-                                      📍 {foto.lugar}
-                                    </span>
-                                  )}
-                                </div>
-
-                                {/* Contenido y Detalles */}
-                                <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
-                                  <div>
-                                    <div className="flex items-start justify-between gap-2">
-                                      <h3 className="font-bold text-slate-900 text-sm">{foto.titulo}</h3>
-                                      <button
-                                        onClick={() => handleDeleteFoto(foto.id)}
-                                        className="text-slate-300 hover:text-rose-500 p-1 rounded-lg transition"
-                                        title="Eliminar foto"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                    <div className="text-[10px] text-slate-400 mt-0.5">
-                                      📅 {formatearFechaStr(foto.fecha)} • Por <span className="font-bold text-slate-600">{foto.autor || 'Familiar'}</span>
-                                    </div>
-                                    {foto.descripcion && (
-                                      <p className="text-xs text-slate-600 mt-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100 leading-relaxed">
-                                        "{foto.descripcion}"
-                                      </p>
-                                    )}
-                                  </div>
-
-                                  {/* Barra de Acciones: Reacciones y Telegram */}
-                                  <div className="border-t border-slate-100 pt-3 space-y-3">
-                                    <div className="flex items-center justify-between">
-                                      <button
-                                        onClick={() => handleToggleLikeFoto(foto.id)}
-                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                                          yaDioLike
-                                            ? 'bg-rose-50 text-rose-600 border border-rose-200'
-                                            : 'bg-slate-50 text-slate-500 hover:bg-rose-50 hover:text-rose-600'
-                                        }`}
-                                        title={likesArray.length > 0 ? `Les gusta a: ${likesArray.join(', ')}` : 'Dar me gusta'}
-                                      >
-                                        <Heart className={`w-4 h-4 ${yaDioLike ? 'fill-rose-500 text-rose-500' : ''}`} />
-                                        <span>{likesArray.length}</span>
-                                      </button>
-
-                                      <button
-                                        onClick={() => handleCompartirFotoTelegram(foto)}
-                                        className="text-sky-600 hover:text-sky-700 bg-sky-50 hover:bg-sky-100 px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition"
-                                        title="Avisar en Telegram"
-                                      >
-                                        <span>✈️</span> Compartir
-                                      </button>
-                                    </div>
-
-                                    {/* Comentarios */}
-                                    <div className="space-y-2 pt-1">
-                                      {comentarios.length > 0 && (
-                                        <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
-                                          {comentarios.map(c => (
-                                            <div key={c.id} className="text-[11px] bg-slate-50 p-2 rounded-xl">
-                                              <span className="font-bold text-slate-800">{c.autor}: </span>
-                                              <span className="text-slate-600">{c.texto}</span>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-
-                                      {/* Añadir comentario */}
-                                      <div className="flex gap-1.5">
-                                        <input
-                                          type="text"
-                                          placeholder="Escribe un comentario..."
-                                          value={nuevoComentarioTexto[foto.id] || ''}
-                                          onChange={(e) => {
-                                            const val = e.target.value;
-                                            setNuevoComentarioTexto(prev => ({ ...prev, [foto.id]: val }));
-                                          }}
-                                          onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                              handleAñadirComentarioFoto(foto.id, nuevoComentarioTexto[foto.id]);
-                                            }
-                                          }}
-                                          className="flex-1 text-[11px] p-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-purple-400"
-                                        />
-                                        <button
-                                          onClick={() => handleAñadirComentarioFoto(foto.id, nuevoComentarioTexto[foto.id])}
-                                          className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10px] px-2.5 py-1 rounded-xl transition shrink-0"
-                                        >
-                                          Enviar
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
-
               </div>
             </div>
           )}
@@ -10865,7 +10878,7 @@ export default function App() {
                   <div>
                     <label className="block text-[10px] font-bold text-slate-400 mb-1.5">Familiares que viajan:</label>
                     <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto p-1.5 border rounded-xl">
-                      {integrantes.map(miembro => {
+                      {integrantesActivos.map(miembro => {
                         const seleccionado = newVacation.quienes?.includes(miembro.nombre);
                         return (
                           <button key={miembro.id} type="button" onClick={() => toggleQuienVacacion(miembro.nombre)} className={`px-2 py-1 rounded text-[10px] border transition-all ${seleccionado ? 'bg-amber-100 text-amber-900 border-amber-300 font-bold' : 'bg-slate-50 text-slate-500'}`}>
