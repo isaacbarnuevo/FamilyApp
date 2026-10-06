@@ -102,6 +102,25 @@ export function resolverUbicacionPadres(snapUbicacion, trasladosPadres, hoyIso) 
   return ubicacion;
 }
 
+export function deduplicarCumpleanos(lista) {
+  const mapa = new Map();
+  for (const c of (lista || [])) {
+    const norm = (c.nombre || '').toLowerCase().trim();
+    if (!norm) continue;
+    if (!mapa.has(norm)) {
+      mapa.set(norm, c);
+    } else {
+      const exist = mapa.get(norm);
+      const tieneMejorSanto = (!exist.santo || exist.santo.toLowerCase().includes('no especificado')) && (c.santo && !c.santo.toLowerCase().includes('no especificado'));
+      const tieneFechaNac = !exist.fechaNacimiento && c.fechaNacimiento;
+      if (tieneMejorSanto || tieneFechaNac) {
+        mapa.set(norm, { ...exist, ...c });
+      }
+    }
+  }
+  return Array.from(mapa.values());
+}
+
 export async function runDailyDigest(force = false) {
   console.log(`[${new Date().toISOString()}] Iniciando comprobación matutina de FamilyApp...`);
 
@@ -164,7 +183,7 @@ export async function runDailyDigest(force = false) {
     getDoc(docUbicacion)
   ]);
 
-  const cumpleanos = snapCumples.docs.map(d => ({ id: d.id, ...d.data() }));
+  const cumpleanos = deduplicarCumpleanos(snapCumples.docs.map(d => ({ id: d.id, ...d.data() })));
   const integrantes = snapMiembros.docs.map(d => ({ id: d.id, ...d.data() }));
   const eventos = snapEventos.docs.map(d => ({ id: d.id, ...d.data() }));
   const citasMedicas = snapCitas.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -172,23 +191,36 @@ export async function runDailyDigest(force = false) {
   const vacaciones = snapVacaciones.docs.map(d => ({ id: d.id, ...d.data() }));
   const ubicacionPadres = resolverUbicacionPadres(snapUbicacion, trasladosPadres, hoyIso);
 
-  // 2. Filtrar celebraciones y avisos de hoy y mañana
-  const cumplesDeHoy = cumpleanos.filter(c => {
-    if (!c.fecha || !c.fecha.includes('-')) return false;
+  // 2. Filtrar celebraciones y avisos de hoy y mañana con deduplicación estricta
+  const cumplesDeHoy = [];
+  const cumplesVistos = new Set();
+  cumpleanos.forEach(c => {
+    if (!c.fecha || !c.fecha.includes('-')) return;
     const parts = c.fecha.split('-');
     const m = parts.length === 3 ? parseInt(parts[1], 10) : parseInt(parts[0], 10);
     const d = parts.length === 3 ? parseInt(parts[2], 10) : parseInt(parts[1], 10);
-    return m === hMes && d === hDia;
+    if (m === hMes && d === hDia) {
+      const norm = (c.nombre || '').toLowerCase().trim();
+      if (!cumplesVistos.has(norm)) {
+        cumplesVistos.add(norm);
+        cumplesDeHoy.push(c);
+      }
+    }
   });
 
   const santosDeHoy = [];
+  const santosVistos = new Set();
   integrantes.forEach(i => {
-    if (i.santo && matchesSaintDate(i.santo, hoyObj)) {
+    const norm = (i.nombre || '').toLowerCase().trim();
+    if (i.santo && matchesSaintDate(i.santo, hoyObj) && !santosVistos.has(norm)) {
+      santosVistos.add(norm);
       santosDeHoy.push({ nombre: i.nombre, santo: i.santo });
     }
   });
   cumpleanos.forEach(c => {
-    if (c.santo && matchesSaintDate(c.santo, hoyObj) && !santosDeHoy.some(s => s.nombre === c.nombre)) {
+    const norm = (c.nombre || '').toLowerCase().trim();
+    if (c.santo && matchesSaintDate(c.santo, hoyObj) && !santosVistos.has(norm)) {
+      santosVistos.add(norm);
       santosDeHoy.push({ nombre: c.nombre, santo: c.santo });
     }
   });

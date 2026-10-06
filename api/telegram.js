@@ -1,7 +1,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
 import { getFirestore, collection, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore';
-import { runDailyDigest, resolverUbicacionPadres } from '../scripts/telegram_daily_cron.mjs';
+import { runDailyDigest, resolverUbicacionPadres, deduplicarCumpleanos } from '../scripts/telegram_daily_cron.mjs';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCPc3BTDzRFts7TJYhEbrFjZ-fre5nsmXQ",
@@ -156,7 +156,7 @@ async function obtenerDatosFirestore() {
   const ubicacionPadres = resolverUbicacionPadres(snapUbicacion, trasladosList, getFechaHoySpain());
 
   return {
-    cumpleanos: snapCumples.docs.map(d => ({ id: d.id, ...d.data() })),
+    cumpleanos: deduplicarCumpleanos(snapCumples.docs.map(d => ({ id: d.id, ...d.data() }))),
     integrantes: snapMiembros.docs.map(d => ({ id: d.id, ...d.data() })),
     citasMedicas: snapCitas.docs.map(d => ({ id: d.id, ...d.data() })),
     trasladosPadres: trasladosList,
@@ -681,20 +681,35 @@ export default async function handler(req, res) {
           ...eventosHoy.map(e => ({ tipo: 'evento', horaSort: normalizarHora(e.hora), data: e }))
         ].sort((a, b) => a.horaSort.localeCompare(b.horaSort));
 
-        const cumplesHoy = cumpleanos.filter(c => {
-          if (!c.fecha || !c.fecha.includes('-')) return false;
+        const cumplesHoy = [];
+        const cumplesVistos = new Set();
+        cumpleanos.forEach(c => {
+          if (!c.fecha || !c.fecha.includes('-')) return;
           const parts = c.fecha.split('-');
           const m = parts.length === 3 ? parseInt(parts[1], 10) : parseInt(parts[0], 10);
           const d = parts.length === 3 ? parseInt(parts[2], 10) : parseInt(parts[1], 10);
-          return m === hMes && d === hDia;
+          if (m === hMes && d === hDia) {
+            const norm = (c.nombre || '').toLowerCase().trim();
+            if (!cumplesVistos.has(norm)) {
+              cumplesVistos.add(norm);
+              cumplesHoy.push(c);
+            }
+          }
         });
 
         const santosHoy = [];
+        const santosVistos = new Set();
         integrantes.forEach(i => {
-          if (i.santo && matchesSaintDate(i.santo, hoyObj)) santosHoy.push(i.nombre);
+          const norm = (i.nombre || '').toLowerCase().trim();
+          if (i.santo && matchesSaintDate(i.santo, hoyObj) && !santosVistos.has(norm)) {
+            santosVistos.add(norm);
+            santosHoy.push(i.nombre);
+          }
         });
         cumpleanos.forEach(c => {
-          if (c.santo && matchesSaintDate(c.santo, hoyObj) && !santosHoy.includes(c.nombre)) {
+          const norm = (c.nombre || '').toLowerCase().trim();
+          if (c.santo && matchesSaintDate(c.santo, hoyObj) && !santosVistos.has(norm)) {
+            santosVistos.add(norm);
             santosHoy.push(c.nombre);
           }
         });

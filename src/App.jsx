@@ -1571,6 +1571,26 @@ export default function App() {
             console.error(e);
           }
         }
+
+        // Deduplicación general preventiva de cumpleaños en la nube
+        const gruposCloud = {};
+        cumpleanos.forEach(c => {
+          if (!c || !c.nombre) return;
+          const k = c.nombre.toLowerCase().trim();
+          if (!gruposCloud[k]) gruposCloud[k] = [];
+          gruposCloud[k].push(c);
+        });
+        for (const [k, lista] of Object.entries(gruposCloud)) {
+          if (lista.length > 1) {
+            const principal = lista.find(c => !c.id.startsWith('c_')) || lista[0];
+            const sobrantes = lista.filter(c => c.id !== principal.id);
+            try {
+              await Promise.all(sobrantes.map(c => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'cumpleanos', c.id))));
+            } catch (e) {
+              console.error("Error deduplicando cumpleaños en nube:", e);
+            }
+          }
+        }
       }
 
       // 4. Fusión de duplicados y renombramiento de Isaac / Isaac (Isik) (Local/Fallback)
@@ -1599,6 +1619,19 @@ export default function App() {
           const nuevos = cumpleanos.map(c => c.id === isaacCump[0].id ? { ...c, nombre: 'Isaac (Isik)', santo: '3 de Junio (San Isaac)' } : c);
           setCumpleanos(nuevos);
           persistLocal('cumpleanos', nuevos);
+        }
+
+        // Deduplicación general preventiva en modo local
+        const mapaLocal = new Map();
+        cumpleanos.forEach(c => {
+          if (!c || !c.nombre) return;
+          const k = c.nombre.toLowerCase().trim();
+          if (!mapaLocal.has(k)) mapaLocal.set(k, c);
+        });
+        if (mapaLocal.size < cumpleanos.length) {
+          const unicos = Array.from(mapaLocal.values());
+          setCumpleanos(unicos);
+          persistLocal('cumpleanos', unicos);
         }
       }
 
@@ -1968,8 +2001,11 @@ export default function App() {
           for (const integrante of INTEGRANTES_PREDEFINIDOS) {
             await addDoc(colMiembros, integrante);
           }
-          for (const cumple of CUMPLEANOS_PREDEFINIDOS) {
-            await addDoc(colCumples, cumple);
+          const snapCumples = await getDocs(colCumples);
+          if (snapCumples.empty) {
+            for (const cumple of CUMPLEANOS_PREDEFINIDOS) {
+              await addDoc(colCumples, cumple);
+            }
           }
           await addDoc(colVacaciones, {
             lugar: 'Sevilla',
@@ -2085,7 +2121,21 @@ export default function App() {
     });
 
     const unsubCumples = onSnapshot(colCumples, (snapshot) => {
-      setCumpleanos(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      const raw = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      const mapa = new Map();
+      raw.forEach(c => {
+        const norm = (c.nombre || '').toLowerCase().trim();
+        if (!norm) return;
+        if (!mapa.has(norm)) {
+          mapa.set(norm, c);
+        } else {
+          const exist = mapa.get(norm);
+          const tieneMejorSanto = (!exist.santo || exist.santo.toLowerCase().includes('no especificado')) && (c.santo && !c.santo.toLowerCase().includes('no especificado'));
+          const tieneFechaNac = !exist.fechaNacimiento && c.fechaNacimiento;
+          if (tieneMejorSanto || tieneFechaNac) mapa.set(norm, { ...exist, ...c });
+        }
+      });
+      setCumpleanos(Array.from(mapa.values()));
     }, (err) => {
       console.error("Error al suscribirse a cumpleaños (posiblemente reglas de Firestore):", err);
       setCumpleanos(getInitialState('cumpleanos', CUMPLEANOS_PREDEFINIDOS.map((c, i) => ({ id: 'c_' + i, ...c }))));
