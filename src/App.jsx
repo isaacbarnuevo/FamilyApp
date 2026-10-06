@@ -1809,15 +1809,33 @@ export default function App() {
     if (isCloudMode && user && !isLocalMode) {
       try {
         const col = collection(db, 'artifacts', appId, 'public', 'data', 'cumpleanos');
+        const searchNorm = (searchName || '').toLowerCase().trim();
+        const nomNorm = (nombre || '').toLowerCase().trim();
+
+        // 1. Verificar si en el estado tenemos ya el ID real de Firestore (que no empiece por c_)
         const existente = cumpleanos.find(c => c && (c.nombre === searchName || c.nombre === nombre));
-        if (existente) {
-          const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cumpleanos', existente.id);
+        let docIdReal = (existente && typeof existente.id === 'string' && !existente.id.startsWith('c_')) ? existente.id : null;
+
+        // 2. Si el ID era local (ej: c_2), consultar directamente la colección en Firestore para hallar el documento real
+        if (!docIdReal) {
+          const snap = await getDocs(col);
+          const docFirestore = snap.docs.find(d => {
+            const n = (d.data().nombre || '').toLowerCase().trim();
+            return n === searchNorm || n === nomNorm;
+          });
+          if (docFirestore) {
+            docIdReal = docFirestore.id;
+          }
+        }
+
+        if (docIdReal) {
+          const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cumpleanos', docIdReal);
           await updateDoc(docRef, cumpleData);
         } else {
           await addDoc(col, cumpleData);
         }
       } catch (e) {
-        console.error("Error sincronizando cumpleaños:", e);
+        console.warn("Aviso al sincronizar cumpleaños en la nube:", e);
       }
     } else {
       const existente = cumpleanos.find(c => c && (c.nombre === searchName || c.nombre === nombre));
@@ -2135,7 +2153,9 @@ export default function App() {
           if (tieneMejorSanto || tieneFechaNac) mapa.set(norm, { ...exist, ...c });
         }
       });
-      setCumpleanos(Array.from(mapa.values()));
+      const unicos = Array.from(mapa.values());
+      setCumpleanos(unicos);
+      persistLocal('cumpleanos', unicos);
     }, (err) => {
       console.error("Error al suscribirse a cumpleaños (posiblemente reglas de Firestore):", err);
       setCumpleanos(getInitialState('cumpleanos', CUMPLEANOS_PREDEFINIDOS.map((c, i) => ({ id: 'c_' + i, ...c }))));
@@ -6440,10 +6460,23 @@ export default function App() {
             }
           }
 
-          for (const cum of cumpleanos) {
-            if (cum.nombre === editingMemberOldNombre) {
-              await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'cumpleanos', cum.id), { nombre: newNombre });
+          try {
+            for (const cum of cumpleanos) {
+              if (cum.nombre === editingMemberOldNombre) {
+                if (typeof cum.id === 'string' && !cum.id.startsWith('c_')) {
+                  await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'cumpleanos', cum.id), { nombre: newNombre });
+                } else {
+                  const snapCum = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'cumpleanos'));
+                  for (const d of snapCum.docs) {
+                    if (d.data().nombre === editingMemberOldNombre) {
+                      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'cumpleanos', d.id), { nombre: newNombre });
+                    }
+                  }
+                }
+              }
             }
+          } catch (eCum) {
+            console.warn("Aviso actualizando nombre en cumpleaños:", eCum);
           }
         }
 
