@@ -122,47 +122,43 @@ const appId = typeof __app_id !== 'undefined' ? __app_id : 'family-app-cloud';
 
 // Datos de semilla con Santos incorporados
 const INTEGRANTES_PREDEFINIDOS = [
-  { nombre: 'Encarnación', rol: 'Padres', santo: 'No especificado', email: null },
-  { nombre: 'Jaime', rol: 'Padres', santo: 'No especificado', email: null },
-  { nombre: 'Rebeca', rol: 'Hermanos', parejaDe: 'Bartek', santo: '30 de Agosto (Santa Rebeca)', email: null },
-  { nombre: 'Isaac (Isik)', rol: 'Hermanos', parejaDe: 'Mónica', santo: '3 de Junio (San Isaac)', email: null },
-  { nombre: 'Mónica', rol: 'Cuñados', parejaDe: 'Isaac (Isik)', santo: '27 de Agosto (Santa Mónica)', email: null },
-  { nombre: 'María', rol: 'Hermanos', parejaDe: 'Bartek', santo: '12 de Septiembre (Dulce Nombre de María)', email: null },
+  { nombre: 'Encarnación', rol: 'Padres', santo: '25 de Marzo', email: null, fechaNacimiento: '1951-10-05' },
+  { nombre: 'Jaime', rol: 'Padres', santo: '25 de Julio', email: null, fechaNacimiento: '1952-05-19' },
+  { nombre: 'Rebeca (Rebe)', rol: 'Hermanos', parejaDe: null, santo: '23 de Marzo', email: null, fechaNacimiento: '1979-03-16' },
+  { nombre: 'Isaac (Isik)', rol: 'Hermanos', parejaDe: 'Mónica', santo: '3 de Junio (San Isaac)', email: null, fechaNacimiento: '1981-06-21' },
+  { nombre: 'Mónica', rol: 'Cuñados', parejaDe: 'Isaac (Isik)', santo: '27 de Agosto (Santa Mónica)', email: null, fechaNacimiento: '1982-10-20' },
+  { nombre: 'María', rol: 'Hermanos', parejaDe: 'Bartek', santo: '12 de Septiembre (Dulce Nombre de María)', email: null, fechaNacimiento: '1982-10-22' },
   { nombre: 'Bartek', rol: 'Cuñados', parejaDe: 'María', santo: '24 de Agosto (San Bartolomé)', email: null },
   { nombre: 'Juan', rol: 'Hermanos', parejaDe: null, santo: '24 de junio', email: null, fechaNacimiento: '1985-06-25' },
-  { nombre: 'Ana', rol: 'Hermanos', parejaDe: 'Javier', santo: 'No especificado', email: null },
+  { nombre: 'Ana', rol: 'Hermanos', parejaDe: 'Javier', santo: '26 de Julio', email: null, fechaNacimiento: '1984-01-21' },
   { nombre: 'Javier', rol: 'Cuñados', parejaDe: 'Ana', santo: '3 de Diciembre (San Francisco Javier)', email: null },
-  { nombre: 'Cristina', rol: 'Hermanos', parejaDe: null, santo: 'No especificado', email: null },
-  { nombre: 'Teresa', rol: 'Hermanos', parejaDe: null, santo: 'No especificado', email: null },
-  { nombre: 'Jorge', rol: 'Cuñados', parejaDe: null, santo: 'No especificado', email: null },
-  { nombre: 'Lucas', rol: 'Hijos', padres: ['Isaac (Isik)', 'Mónica'], padrinos: ['Rebeca'], santo: '18 de Octubre (San Lucas)', email: null },
-  { nombre: 'Elena', rol: 'Hijos', padres: ['Rebeca', 'Bartek'], padrinos: ['Isaac (Isik)'], santo: '18 de Agosto (Santa Elena)', email: null },
-  { nombre: 'David', rol: 'Hijos', padres: ['Ana', 'Javier'], padrinos: [], santo: 'No especificado', email: null, fechaNacimiento: '2020-01-02' },
-  { nombre: 'Carmen', rol: 'Hijos', padres: ['Ana', 'Javier'], padrinos: [], santo: 'No especificado', email: null, fechaNacimiento: '2023-03-25' },
-  { nombre: 'Nieves', rol: 'Hijos', padres: ['Ana', 'Javier'], padrinos: [], santo: '5 Agosto', email: null, fechaNacimiento: '2012-01-25' },
-  { nombre: 'Miriam', rol: 'Hijos', padres: ['Ana', 'Javier'], padrinos: [], santo: '12 de Septiembre', email: null, fechaNacimiento: '2014-11-19' },
-  { nombre: 'Jaime (Hijo)', rol: 'Hijos', padres: ['Ana', 'Javier'], padrinos: [], santo: '25 de Julio', email: null, fechaNacimiento: '2013-07-04' },
-  { nombre: 'Francisco', rol: 'Hijos', padres: ['Ana', 'Javier'], padrinos: [], santo: '4 de Octubre (San Francisco de Asís)', email: null, fechaNacimiento: '2016-12-01' },
+  { nombre: 'Cristina', rol: 'Hermanos', parejaDe: null, santo: '24 de Julio', email: null, fechaNacimiento: '1990-12-15' },
+  { nombre: 'Teresa', rol: 'Hermanos', parejaDe: 'Jorge', santo: '15 de Octubre', email: null, fechaNacimiento: '1986-11-26' },
+  { nombre: 'Jorge', rol: 'Cuñados', parejaDe: 'Teresa', santo: 'No especificado', email: null },
+  { nombre: 'David', rol: 'Hijos', padres: ['Isaac (Isik)', 'Mónica'], padrinos: [], santo: '29 de Diciembre', email: null, fechaNacimiento: '2020-01-02' },
+  { nombre: 'Carmen', rol: 'Hijos', padres: ['Isaac (Isik)', 'Mónica'], padrinos: [], santo: '16 de Julio', email: null, fechaNacimiento: '2023-03-25' },
+  { nombre: 'Nieves', rol: 'Hijos', padres: ['Isaac (Isik)', 'Mónica'], padrinos: ['Ana'], santo: '5 Agosto', email: null, fechaNacimiento: '2012-01-25' },
+  { nombre: 'Miriam', rol: 'Hijos', padres: ['Isaac (Isik)', 'Mónica'], padrinos: [], santo: '12 de Septiembre', email: null, fechaNacimiento: '2014-11-19' },
+  { nombre: 'Jaime (Hijo)', rol: 'Hijos', padres: ['Isaac (Isik)', 'Mónica'], padrinos: [], santo: '25 de Julio', email: null, fechaNacimiento: '2013-07-04' },
+  { nombre: 'Francisco', rol: 'Hijos', padres: ['Isaac (Isik)', 'Mónica'], padrinos: [], santo: '4 de Octubre (San Francisco de Asís)', email: null, fechaNacimiento: '2016-12-01' },
   { nombre: 'Tía Mariuge', rol: 'Tíos/Familiares', santo: 'No especificado', email: null }
 ];
 
 const CUMPLEANOS_PREDEFINIDOS = [
-  { nombre: 'Encarnación', fecha: '10-05', parentesco: 'Padres', santo: 'No especificado' },
-  { nombre: 'Jaime', fecha: '05-19', parentesco: 'Padres', santo: 'No especificado' },
-  { nombre: 'Rebeca', fecha: '03-16', parentesco: 'Hermana', santo: '30 de Agosto (Santa Rebeca)', fechaNacimiento: '1979-03-16' },
-  { nombre: 'Isaac (Isik)', fecha: '06-21', parentesco: 'Hermano', santo: '3 de Junio (San Isaac)' },
-  { nombre: 'Mónica', fecha: '10-20', parentesco: 'Cuñada', santo: '27 de Agosto (Santa Mónica)' },
-  { nombre: 'María', fecha: '10-22', parentesco: 'Hermana', santo: '12 de Septiembre (Dulce Nombre de María)' },
+  { nombre: 'Encarnación', fecha: '10-05', parentesco: 'Padres', santo: '25 de Marzo', fechaNacimiento: '1951-10-05' },
+  { nombre: 'Jaime', fecha: '05-19', parentesco: 'Padres', santo: '25 de Julio', fechaNacimiento: '1952-05-19' },
+  { nombre: 'Rebeca (Rebe)', fecha: '03-16', parentesco: 'Hermana', santo: '23 de Marzo', fechaNacimiento: '1979-03-16' },
+  { nombre: 'Isaac (Isik)', fecha: '06-21', parentesco: 'Hermano', santo: '3 de Junio (San Isaac)', fechaNacimiento: '1981-06-21' },
+  { nombre: 'Mónica', fecha: '10-20', parentesco: 'Cuñada', santo: '27 de Agosto (Santa Mónica)', fechaNacimiento: '1982-10-20' },
+  { nombre: 'María', fecha: '10-22', parentesco: 'Hermana', santo: '12 de Septiembre (Dulce Nombre de María)', fechaNacimiento: '1982-10-22' },
   { nombre: 'Bartek', fecha: '01-15', parentesco: 'Cuñado', santo: '24 de Agosto (San Bartolomé)' },
-  { nombre: 'Juan', fecha: '06-25', parentesco: 'Hermano/a', santo: '24 de junio' },
-  { nombre: 'Ana', fecha: '04-05', parentesco: 'Hermano/a', santo: 'No especificado' },
+  { nombre: 'Juan', fecha: '06-25', parentesco: 'Hermano/a', santo: '24 de junio', fechaNacimiento: '1985-06-25' },
+  { nombre: 'Ana', fecha: '01-21', parentesco: 'Hermano/a', santo: '26 de Julio', fechaNacimiento: '1984-01-21' },
   { nombre: 'Javier', fecha: '12-03', parentesco: 'Cuñado/a', santo: '3 de Diciembre (San Francisco Javier)' },
-  { nombre: 'Cristina', fecha: '08-15', parentesco: 'Hermano/a', santo: 'No especificado' },
-  { nombre: 'Teresa', fecha: '03-12', parentesco: 'Hermano/a', santo: 'No especificado' },
-  { nombre: 'Lucas', fecha: '05-12', parentesco: 'Sobrino/Hijo', santo: '18 de Octubre (San Lucas)' },
-  { nombre: 'Elena', fecha: '08-20', parentesco: 'Sobrino/Hijo', santo: '18 de Agosto (Santa Elena)' },
-  { nombre: 'David', fecha: '01-02', parentesco: 'Sobrino/Hijo', santo: 'No especificado' },
-  { nombre: 'Carmen', fecha: '03-25', parentesco: 'Sobrino/Hijo', santo: 'No especificado' },
+  { nombre: 'Cristina', fecha: '12-15', parentesco: 'Hermano/a', santo: '24 de Julio', fechaNacimiento: '1990-12-15' },
+  { nombre: 'Teresa', fecha: '11-26', parentesco: 'Hermano/a', santo: '15 de Octubre', fechaNacimiento: '1986-11-26' },
+  { nombre: 'David', fecha: '01-02', parentesco: 'Sobrino/Hijo', santo: '29 de Diciembre' },
+  { nombre: 'Carmen', fecha: '03-25', parentesco: 'Sobrino/Hijo', santo: '16 de Julio' },
   { nombre: 'Nieves', fecha: '01-25', parentesco: 'Sobrino/Hijo', santo: '5 Agosto' },
   { nombre: 'Miriam', fecha: '11-19', parentesco: 'Sobrino/Hijo', santo: '12 de Septiembre' },
   { nombre: 'Jaime (Hijo)', fecha: '07-04', parentesco: 'Sobrino/Hijo', santo: '25 de Julio' },
@@ -203,11 +199,12 @@ const getFechaHoyLocal = (d = new Date()) => {
 const matchesSaintDate = (santoStr, date) => {
   if (!santoStr || typeof santoStr !== 'string') return false;
   const cleanStr = normalizarTexto(santoStr);
+  if (cleanStr.includes('no especificado') || cleanStr.includes('desconocido') || cleanStr === 'no') return false;
   const meses = [
     'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
     'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
   ];
-  const regex = /(\d+)\s*(?:de\s+)?(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/i;
+  const regex = /(?:^|\D)(\d{1,2})\s*(?:de\s+)?(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/i;
   const match = cleanStr.match(regex);
   if (match) {
     const dia = parseInt(match[1], 10);
@@ -1473,48 +1470,23 @@ export default function App() {
     if (integrantes.length === 0) return;
 
     const runDeduplication = async () => {
-      // 1. Limpieza de "Laura" a petición familiar (Cloud)
+      // 1. Limpieza de nombres ficticios de plantilla ("Laura", "Paulino", "Lucas", "Elena") en la nube
       if (isCloudMode && user && !isLocalMode) {
-        const lauras = integrantes.filter(i => i && i.nombre && i.nombre.toLowerCase() === 'laura');
-        if (lauras.length > 0) {
-          console.log(`Eliminando a Laura de los miembros en la nube...`);
+        const nombresFicticios = new Set(['laura', 'paulino', 'lucas', 'elena']);
+        const miembrosFicticios = integrantes.filter(i => i && i.nombre && nombresFicticios.has(i.nombre.toLowerCase().trim()));
+        if (miembrosFicticios.length > 0) {
           try {
-            await Promise.all(lauras.map(m => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'miembros', m.id))));
-            triggerToast("🧹 Laura ha sido removida de los integrantes.");
+            await Promise.all(miembrosFicticios.map(m => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'miembros', m.id))));
           } catch (e) {
-            console.error("Error al quitar a Laura:", e);
+            console.error("Error al quitar miembros ficticios:", e);
           }
         }
-        const lauraCumples = cumpleanos.filter(c => c && c.nombre && c.nombre.toLowerCase() === 'laura');
-        if (lauraCumples.length > 0) {
-          console.log(`Eliminando cumpleaños de Laura en la nube...`);
+        const cumplesFicticios = cumpleanos.filter(c => c && c.nombre && nombresFicticios.has(c.nombre.toLowerCase().trim()));
+        if (cumplesFicticios.length > 0) {
           try {
-            await Promise.all(lauraCumples.map(c => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'cumpleanos', c.id))));
+            await Promise.all(cumplesFicticios.map(c => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'cumpleanos', c.id))));
           } catch (e) {
-            console.error("Error al quitar cumpleaños de Laura:", e);
-          }
-        }
-      }
-
-      // 1.1 Limpieza de "Paulino" a petición familiar (Cloud)
-      if (isCloudMode && user && !isLocalMode) {
-        const paulinos = integrantes.filter(i => i && i.nombre && i.nombre.toLowerCase() === 'paulino');
-        if (paulinos.length > 0) {
-          console.log(`Eliminando a Paulino de los miembros en la nube...`);
-          try {
-            await Promise.all(paulinos.map(m => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'miembros', m.id))));
-            triggerToast("🧹 Paulino ha sido removido de los integrantes.");
-          } catch (e) {
-            console.error("Error al quitar a Paulino:", e);
-          }
-        }
-        const paulinoCumples = cumpleanos.filter(c => c && c.nombre && c.nombre.toLowerCase() === 'paulino');
-        if (paulinoCumples.length > 0) {
-          console.log(`Eliminando cumpleaños de Paulino en la nube...`);
-          try {
-            await Promise.all(paulinoCumples.map(c => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'cumpleanos', c.id))));
-          } catch (e) {
-            console.error("Error al quitar cumpleaños de Paulino:", e);
+            console.error("Error al quitar cumpleaños ficticios:", e);
           }
         }
       }
@@ -2113,7 +2085,7 @@ export default function App() {
     sembrarDatosSiVacios();
 
     const unsubMiembros = onSnapshot(colMiembros, (snapshot) => {
-      setIntegrantes(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      setIntegrantes(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
     }, (err) => {
       console.error("Error al suscribirse a miembros (posiblemente reglas de Firestore):", err);
       setIntegrantes(getInitialState('miembros', INTEGRANTES_PREDEFINIDOS.map((m, i) => ({ id: 'm_' + i, ...m }))));
@@ -2121,7 +2093,7 @@ export default function App() {
     });
 
     const unsubVacaciones = onSnapshot(colVacaciones, (snapshot) => {
-      setVacaciones(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      setVacaciones(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
       setLoading(false);
     }, (err) => {
       console.error("Error al suscribirse a vacaciones (posiblemente reglas de Firestore):", err);
@@ -2131,7 +2103,7 @@ export default function App() {
     });
 
     const unsubEventos = onSnapshot(colEventos, (snapshot) => {
-      setEventos(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      setEventos(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
     }, (err) => {
       console.error("Error al suscribirse a eventos (posiblemente reglas de Firestore):", err);
       setEventos(getInitialState('eventos', []));
@@ -2139,18 +2111,19 @@ export default function App() {
     });
 
     const unsubCumples = onSnapshot(colCumples, (snapshot) => {
-      const raw = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      const raw = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
       const mapa = new Map();
       raw.forEach(c => {
         const norm = (c.nombre || '').toLowerCase().trim();
         if (!norm) return;
-        if (!mapa.has(norm)) {
-          mapa.set(norm, c);
+        const baseKey = norm.split('(')[0].trim() || norm;
+        if (!mapa.has(baseKey)) {
+          mapa.set(baseKey, c);
         } else {
-          const exist = mapa.get(norm);
+          const exist = mapa.get(baseKey);
           const tieneMejorSanto = (!exist.santo || exist.santo.toLowerCase().includes('no especificado')) && (c.santo && !c.santo.toLowerCase().includes('no especificado'));
           const tieneFechaNac = !exist.fechaNacimiento && c.fechaNacimiento;
-          if (tieneMejorSanto || tieneFechaNac) mapa.set(norm, { ...exist, ...c });
+          if (tieneMejorSanto || tieneFechaNac) mapa.set(baseKey, { ...exist, ...c });
         }
       });
       const unicos = Array.from(mapa.values());
@@ -2163,7 +2136,7 @@ export default function App() {
     });
 
     const unsubIdeas = onSnapshot(colIdeas, (snapshot) => {
-      setIdeas(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      setIdeas(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
     }, (err) => {
       console.error("Error al suscribirse a ideas (posiblemente reglas de Firestore):", err);
       setIdeas(getInitialState('ideas', []));
@@ -2171,7 +2144,7 @@ export default function App() {
     });
 
     const unsubCitasMedicas = onSnapshot(colCitasMedicas, (snapshot) => {
-      setCitasMedicas(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      setCitasMedicas(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
     }, (err) => {
       console.error("Error al suscribirse a citas médicas (posiblemente reglas de Firestore):", err);
       setCitasMedicas(getInitialState('citasMedicas', CITAS_MEDICAS_PREDEFINIDAS));
@@ -2179,13 +2152,14 @@ export default function App() {
     });
 
     const unsubTraslados = onSnapshot(colTrasladosPadres, (snapshot) => {
-      setTrasladosPadres(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      setTrasladosPadres(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
     }, (err) => {
       console.error("Error al suscribirse a traslados:", err);
       setTrasladosPadres(getInitialState('trasladosPadres', TRASLADOS_PADRES_PREDEFINIDOS));
     });
 
     const unsubUbicacion = onSnapshot(docUbicacion, (docSnap) => {
+      ubicacionCloudLoadedRef.current = true;
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data?.ubicacion) {
@@ -2196,32 +2170,33 @@ export default function App() {
         localStorage.setItem('family_app_ubicacion_padres_meta', JSON.stringify(data));
       }
     }, (err) => {
+      ubicacionCloudLoadedRef.current = true;
       console.warn("Error snapshot ubicación padres:", err);
     });
 
     const unsubMedicacion = onSnapshot(colMedicacionPadres, (snapshot) => {
-      setMedicacionPadres(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      setMedicacionPadres(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
     }, (err) => {
       console.error("Error al suscribirse a medicacionPadres:", err);
       setMedicacionPadres(getInitialState('medicacionPadres', MEDICACION_PREDEFINIDA));
     });
 
     const unsubHistorial = onSnapshot(colHistorialMedico, (snapshot) => {
-      setHistorialMedico(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      setHistorialMedico(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
     }, (err) => {
       console.error("Error al suscribirse a historialMedico:", err);
       setHistorialMedico(getInitialState('historialMedico', HISTORIAL_MEDICO_PREDEFINIDO));
     });
 
     const unsubBotes = onSnapshot(colBotesGastos, (snapshot) => {
-      setBotesGastos(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      setBotesGastos(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
     }, (err) => {
       console.error("Error al suscribirse a botesGastos:", err);
       setBotesGastos(getInitialState('botesGastos', BOTES_GASTOS_PREDEFINIDOS));
     });
 
     const unsubAlbum = onSnapshot(colAlbumFotos, (snapshot) => {
-      setFotosAlbum(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      setFotosAlbum(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
     }, (err) => {
       console.error("Error al suscribirse a albumFotos:", err);
       setFotosAlbum(getInitialState('albumFotos', ALBUM_FOTOS_PREDEFINIDAS));
@@ -2266,6 +2241,7 @@ export default function App() {
 
   // --- LIMPIEZA AUTOMÁTICA DE CITAS Y TRASLADOS PASADOS ---
   const limpiezaRealizadaRef = useRef(false);
+  const ubicacionCloudLoadedRef = useRef(false);
 
   const ejecutarLimpiezaPasados = async (citasActuales = citasMedicas, trasladosActuales = trasladosPadres, manual = false) => {
     const hoyIso = getFechaHoyLocal(new Date());
@@ -2302,24 +2278,44 @@ export default function App() {
       }
     }
 
-    if (trasladosPasados.length > 0) {
-      const ultimoPasado = [...trasladosPasados].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '') || (b.hora || '').localeCompare(a.hora || ''))[0];
+    // Solo considerar traslados reales que hayan tenido conductor asignado o estado 'realizado'
+    const trasladosEfectivosPasados = trasladosPasados.filter(t => {
+      if (typeof t.id === 'string' && t.id.startsWith('tras_')) return false;
+      return t.estado === 'realizado' || (t.conductor && t.conductor !== 'Pendiente de asignar');
+    });
+
+    if (trasladosEfectivosPasados.length > 0) {
+      const ultimoPasado = [...trasladosEfectivosPasados].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '') || (b.hora || '').localeCompare(a.hora || ''))[0];
       if (ultimoPasado && ultimoPasado.destino) {
         const d = (ultimoPasado.destino || '').toLowerCase();
         const destNorm = d.includes('madrid') ? 'Madrid' : (d.includes('alcalá') || d.includes('alcala') || d.includes('esgaravita') ? 'Alcalá (Esgaravita)' : ultimoPasado.destino);
-        
         const fechaHoraTraslado = `${ultimoPasado.fecha}T${ultimoPasado.hora || '12:00'}:00.000Z`;
-        const esManual = metaUbicacionPadres?.modo === 'manual' || metaUbicacionPadres?.esManual === true;
-        const fechaCambioManual = metaUbicacionPadres?.fechaCambio || metaUbicacionPadres?.fecha;
 
-        // La limpieza automática NUNCA pisa una ubicación que fue fijada manualmente a menos que haya un traslado posterior a ese cambio manual
-        if (!esManual || !fechaCambioManual || fechaHoraTraslado > fechaCambioManual) {
+        // Leer primero el documento real de Firestore para jamás pisar un cambio manual hecho desde otro móvil o desde Telegram
+        let metaCheck = metaUbicacionPadres;
+        if (isCloudMode && user && !isLocalMode) {
+          try {
+            const snapUbi = await getDoc(doc(db, 'artifacts', appId, 'public', 'config_ubicacion_padres'));
+            if (snapUbi.exists()) {
+              metaCheck = snapUbi.data();
+            }
+          } catch (e) {}
+        }
+
+        const esManual = metaCheck?.modo === 'manual' || metaCheck?.esManual === true;
+        const fechaCambioManual = metaCheck?.fechaCambio || metaCheck?.fecha || '';
+        const diaCambioManual = fechaCambioManual ? fechaCambioManual.slice(0, 10) : '';
+
+        // La limpieza automática NUNCA pisa una ubicación manual a menos que el traslado sea de una fecha posterior al cambio manual
+        const puedeActualizar = !esManual || !diaCambioManual || (ultimoPasado.fecha > diaCambioManual);
+
+        if (puedeActualizar) {
           setUbicacionActualPadres(destNorm);
           localStorage.setItem('family_app_ubicacion_padres', destNorm);
           if (isCloudMode && user && !isLocalMode) {
             try {
               const docRef = doc(db, 'artifacts', appId, 'public', 'config_ubicacion_padres');
-              setDoc(docRef, {
+              await setDoc(docRef, {
                 ubicacion: destNorm,
                 modo: 'traslado',
                 esManual: false,
@@ -5341,16 +5337,19 @@ export default function App() {
           enviarEncuestaTelegram(preg, pollOpts);
         }
 
-        // Actualizar automáticamente la ubicación de los padres al destino del traslado registrado
-        const d = (trasladoData.destino || '').toLowerCase();
-        const destNorm = d.includes('madrid')
-          ? 'Madrid'
-          : (d.includes('alcalá') || d.includes('alcala') || d.includes('esgaravita')
-            ? 'Alcalá (Esgaravita)'
-            : trasladoData.destino);
+        // Solo actualizar ubicación actual si el traslado es de hoy o anterior, o si ya está marcado como realizado
+        const hoyIsoNow = getFechaHoyLocal(new Date());
+        if (trasladoData.fecha <= hoyIsoNow || trasladoData.estado === 'realizado') {
+          const d = (trasladoData.destino || '').toLowerCase();
+          const destNorm = d.includes('madrid')
+            ? 'Madrid'
+            : (d.includes('alcalá') || d.includes('alcala') || d.includes('esgaravita')
+              ? 'Alcalá (Esgaravita)'
+              : trasladoData.destino);
 
-        if (destNorm) {
-          handleChangeUbicacionPadres(destNorm, false, false);
+          if (destNorm) {
+            handleChangeUbicacionPadres(destNorm, false, false);
+          }
         }
 
         resetTrasladoForm();
@@ -5377,16 +5376,18 @@ export default function App() {
         enviarEncuestaTelegram(preg, pollOpts);
       }
 
-      // Actualizar automáticamente la ubicación de los padres al destino del traslado registrado
-      const d = (trasladoData.destino || '').toLowerCase();
-      const destNorm = d.includes('madrid')
-        ? 'Madrid'
-        : (d.includes('alcalá') || d.includes('alcala') || d.includes('esgaravita')
-          ? 'Alcalá (Esgaravita)'
-          : trasladoData.destino);
+      const hoyIsoNow = getFechaHoyLocal(new Date());
+      if (trasladoData.fecha <= hoyIsoNow || trasladoData.estado === 'realizado') {
+        const d = (trasladoData.destino || '').toLowerCase();
+        const destNorm = d.includes('madrid')
+          ? 'Madrid'
+          : (d.includes('alcalá') || d.includes('alcala') || d.includes('esgaravita')
+            ? 'Alcalá (Esgaravita)'
+            : trasladoData.destino);
 
-      if (destNorm) {
-        handleChangeUbicacionPadres(destNorm, false, false);
+        if (destNorm) {
+          handleChangeUbicacionPadres(destNorm, false, false);
+        }
       }
 
       resetTrasladoForm();
@@ -5624,8 +5625,12 @@ export default function App() {
 
     if (isCloudMode && user && !isLocalMode) {
       try {
-        const docRef = doc(db, 'artifacts', appId, 'public', 'config_ubicacion_padres');
-        await setDoc(docRef, newMeta, { merge: true });
+        const docRef1 = doc(db, 'artifacts', appId, 'public', 'config_ubicacion_padres');
+        const docRef2 = doc(db, 'artifacts', appId, 'public', 'data', 'configuracion', 'config_ubicacion_padres');
+        await Promise.all([
+          setDoc(docRef1, newMeta, { merge: true }),
+          setDoc(docRef2, newMeta, { merge: true })
+        ]);
       } catch (e) {
         console.warn(e);
       }
@@ -5640,10 +5645,19 @@ export default function App() {
   // Sincronización inteligente y automática de la ubicación de los padres según traslados
   useEffect(() => {
     if (!trasladosPadres || trasladosPadres.length === 0) return;
+    // Esperar a que la ubicación real de Firestore haya cargado para evitar que un móvil nuevo con localStorage vacío pise cambios manuales
+    if (isCloudMode && !isLocalMode && !ubicacionCloudLoadedRef.current) return;
+
     const hoyIso = getFechaHoyLocal(new Date());
 
     const trasladosPasados = trasladosPadres
-      .filter(t => t.fecha && (t.fecha <= hoyIso || t.estado === 'realizado'))
+      .filter(t => {
+        if (!t || !t.fecha) return false;
+        if (typeof t.id === 'string' && t.id.startsWith('tras_')) return false;
+        if (t.estado === 'realizado') return t.fecha <= hoyIso;
+        const tieneConductor = t.conductor && t.conductor !== 'Pendiente de asignar';
+        return tieneConductor && t.fecha <= hoyIso;
+      })
       .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '') || (b.hora || '').localeCompare(a.hora || ''));
 
     if (trasladosPasados.length > 0) {
@@ -5658,17 +5672,19 @@ export default function App() {
       if (destNorm && destNorm !== ubicacionActualPadres) {
         const fechaHoraTraslado = `${ultimo.fecha}T${ultimo.hora || '12:00'}:00.000Z`;
         const esManual = metaUbicacionPadres?.modo === 'manual' || metaUbicacionPadres?.esManual === true;
-        const fechaCambioManual = metaUbicacionPadres?.fechaCambio || metaUbicacionPadres?.fecha;
+        const fechaCambioManual = metaUbicacionPadres?.fechaCambio || metaUbicacionPadres?.fecha || '';
+        const diaCambioManual = fechaCambioManual ? fechaCambioManual.slice(0, 10) : '';
 
-        // Si el usuario fijó la ubicación MANUALMENTE, NUNCA sobreescribir a menos que haya un traslado posterior a ese cambio manual
-        if (esManual && fechaCambioManual && fechaCambioManual >= fechaHoraTraslado) {
-          return;
+        // Si el usuario fijó la ubicación MANUALMENTE, NUNCA sobreescribir a menos que haya un traslado de fecha posterior al cambio manual
+        if (esManual && diaCambioManual) {
+          if (ultimo.fecha < diaCambioManual) return;
+          if (ultimo.fecha === diaCambioManual && fechaCambioManual >= fechaHoraTraslado) return;
         }
 
         handleChangeUbicacionPadres(destNorm, false, false);
       }
     }
-  }, [trasladosPadres, ubicacionActualPadres, metaUbicacionPadres]);
+  }, [trasladosPadres, ubicacionActualPadres, metaUbicacionPadres, isLocalMode]);
 
   const handleEnviarResumenTrasladosTelegram = async () => {
     const pendientes = trasladosPadres
@@ -5911,10 +5927,18 @@ export default function App() {
           const miembroAEliminar = integrantes.find(i => i.id === docId);
           if (miembroAEliminar) {
             const nombreEliminado = miembroAEliminar.nombre;
+            const normEliminado = (nombreEliminado || '').toLowerCase().trim();
             // Limpiar a todas las personas que apunten a este miembro como pareja
             const parejasAsociadas = integrantes.filter(i => i.parejaDe === nombreEliminado);
             for (const p of parejasAsociadas) {
               await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'miembros', p.id), { parejaDe: null });
+            }
+            // Eliminar también su cumpleaños/santo asociado para no dejar registros huérfanos
+            const cumplesAsociados = cumpleanos.filter(c => (c.nombre || '').toLowerCase().trim() === normEliminado);
+            for (const c of cumplesAsociados) {
+              if (c.id && !String(c.id).startsWith('c_')) {
+                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'cumpleanos', c.id));
+              }
             }
           }
         }
@@ -5930,11 +5954,17 @@ export default function App() {
       if (coleccion === 'miembros') {
         const miembroAEliminar = integrantes.find(i => i.id === docId);
         const nombreEliminado = miembroAEliminar ? miembroAEliminar.nombre : '';
+        const normEliminado = (nombreEliminado || '').toLowerCase().trim();
         const updated = integrantes
           .filter(i => i.id !== docId)
           .map(i => i.parejaDe === nombreEliminado ? { ...i, parejaDe: null } : i);
         setIntegrantes(updated);
         persistLocal('miembros', updated);
+        if (normEliminado) {
+          const updatedCumples = cumpleanos.filter(c => (c.nombre || '').toLowerCase().trim() !== normEliminado);
+          setCumpleanos(updatedCumples);
+          persistLocal('cumpleanos', updatedCumples);
+        }
         deleted = true;
       } else if (coleccion === 'vacaciones') {
         const updated = vacaciones.filter(v => v.id !== docId);

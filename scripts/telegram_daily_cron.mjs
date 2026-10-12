@@ -34,21 +34,72 @@ function getFechaHoySpain() {
   return `${year}-${month}-${day}`;
 }
 
-function matchesSaintDate(santoStr, fechaObj) {
+const NOMBRES_DEMO_EXCLUIDOS = new Set(['lucas', 'elena', 'laura', 'paulino', 'sofia', 'sofía', 'carlos']);
+
+function normalizarTexto(txt) {
+  return (txt || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+export function esMiembroActivoValido(nombre, integrantes = []) {
+  const norm = (nombre || '').toLowerCase().trim();
+  if (!norm || NOMBRES_DEMO_EXCLUIDOS.has(norm)) return false;
+
+  if (!integrantes || integrantes.length === 0) return true;
+
+  const baseNorm = norm.split('(')[0].trim();
+  const miembro = integrantes.find(i => {
+    const inorm = (i.nombre || '').toLowerCase().trim();
+    const ibase = inorm.split('(')[0].trim();
+    return inorm === norm || (baseNorm && ibase === baseNorm);
+  });
+
+  // Si existe listado de integrantes en Firestore y la persona no está en el árbol familiar, es un registro huérfano borrado
+  if (!miembro) return false;
+
+  // Excluir abuelos fallecidos (padres de Encarnación/Jaime o marcados como Abuelos/fallecidos)
+  if (miembro.rol === 'Abuelos' || miembro.tipoFamiliar === 'Abuelos' || miembro.esAbuelo || miembro.esFallecido) {
+    return false;
+  }
+  const esAbueloEnArbol = miembro.rol === 'Padres' && integrantes.some(
+    otro => otro.rol === 'Padres' && Array.isArray(otro.padres) && otro.padres.includes(miembro.nombre)
+  );
+  if (esAbueloEnArbol) return false;
+
+  return true;
+}
+
+export function matchesSaintDate(santoStr, fechaObj) {
   if (!santoStr || typeof santoStr !== 'string') return false;
-  const s = santoStr.toLowerCase();
-  if (s.includes('no especificado') || s.includes('desconocido')) return false;
+  const s = normalizarTexto(santoStr);
+  if (s.includes('no especificado') || s.includes('desconocido') || s === 'no') return false;
 
   const dia = fechaObj.getDate();
   const mesIndex = fechaObj.getMonth();
-  const mesNombre = MESES[mesIndex];
 
-  const patron1 = `${dia} de ${mesNombre}`;
-  const patron2 = `${dia}/${mesIndex + 1}`;
-  const patron3 = `${dia}-${mesIndex + 1}`;
-  const patron4 = `${dia.toString().padStart(2, '0')}/${(mesIndex + 1).toString().padStart(2, '0')}`;
+  // 1. Formato textual con límite numérico estricto para que "18 de octubre" NUNCA coincida el día "8 de octubre"
+  const regexMes = /(?:^|\D)(\d{1,2})\s*(?:de\s+)?(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/i;
+  const matchMes = s.match(regexMes);
+  if (matchMes) {
+    const dNum = parseInt(matchMes[1], 10);
+    const mNom = matchMes[2].toLowerCase();
+    const mIdx = MESES.indexOf(mNom);
+    return dNum === dia && mIdx === mesIndex;
+  }
 
-  return s.includes(patron1) || s.includes(patron2) || s.includes(patron3) || s.includes(patron4);
+  // 2. Formato numérico DD/MM o DD-MM con límite numérico estricto
+  const regexNum = /(?:^|\D)(\d{1,2})[\/\-](\d{1,2})(?:\D|$)/;
+  const matchNum = s.match(regexNum);
+  if (matchNum) {
+    const dNum = parseInt(matchNum[1], 10);
+    const mNum = parseInt(matchNum[2], 10);
+    return dNum === dia && mNum === (mesIndex + 1);
+  }
+
+  return false;
 }
 
 async function enviarMensajeTelegram(texto, replyMarkup = null) {
@@ -73,11 +124,18 @@ export function resolverUbicacionPadres(snapUbicacion, trasladosPadres, hoyIso) 
   const meta = (snapUbicacion && snapUbicacion.exists()) ? snapUbicacion.data() : {};
   let ubicacion = meta.ubicacion || 'Alcalá (Esgaravita)';
   const esManual = meta.modo === 'manual' || meta.esManual === true;
-  const fechaCambioManual = meta.fechaCambio || meta.fecha;
+  const fechaCambioManual = meta.fechaCambio || meta.fecha || '';
+  const diaCambioManual = fechaCambioManual ? fechaCambioManual.slice(0, 10) : '';
 
-  // Filtrar traslados que ya ocurrieron (fecha <= hoy)
+  // Filtrar solo traslados reales (no semillas tras_*) y efectivamente realizados o con conductor asignado cuya fecha ya haya llegado
   const pasados = (trasladosPadres || [])
-    .filter(t => t.fecha && (t.fecha <= hoyIso || t.estado === 'realizado'))
+    .filter(t => {
+      if (!t || !t.fecha) return false;
+      if (typeof t.id === 'string' && t.id.startsWith('tras_')) return false;
+      if (t.estado === 'realizado') return t.fecha <= hoyIso;
+      const tieneConductor = t.conductor && t.conductor !== 'Pendiente de asignar';
+      return tieneConductor && t.fecha <= hoyIso;
+    })
     .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '') || (b.hora || '').localeCompare(a.hora || ''));
 
   if (pasados.length > 0) {
@@ -90,31 +148,36 @@ export function resolverUbicacionPadres(snapUbicacion, trasladosPadres, hoyIso) 
         ? 'Alcalá (Esgaravita)'
         : ultimo.destino);
 
-    // Si la ubicación se fijó manualmente y ese cambio manual es más reciente que el traslado:
-    if (esManual && fechaCambioManual && fechaCambioManual >= fechaHoraTraslado) {
-      return ubicacion;
+    // Si la ubicación se fijó manualmente, respetarla siempre a menos que exista un traslado de un día posterior al cambio manual
+    if (esManual && diaCambioManual) {
+      if (ultimo.fecha < diaCambioManual) {
+        return ubicacion;
+      }
+      if (ultimo.fecha === diaCambioManual && fechaCambioManual >= fechaHoraTraslado) {
+        return ubicacion;
+      }
     }
 
-    // Si no es manual o hay un traslado más reciente que el cambio manual:
     return destNorm;
   }
 
   return ubicacion;
 }
 
-export function deduplicarCumpleanos(lista) {
+export function deduplicarCumpleanos(lista, integrantes = []) {
   const mapa = new Map();
   for (const c of (lista || [])) {
     const norm = (c.nombre || '').toLowerCase().trim();
-    if (!norm) continue;
-    if (!mapa.has(norm)) {
-      mapa.set(norm, c);
+    if (!norm || !esMiembroActivoValido(c.nombre, integrantes)) continue;
+    const baseKey = norm.split('(')[0].trim() || norm;
+    if (!mapa.has(baseKey)) {
+      mapa.set(baseKey, c);
     } else {
-      const exist = mapa.get(norm);
+      const exist = mapa.get(baseKey);
       const tieneMejorSanto = (!exist.santo || exist.santo.toLowerCase().includes('no especificado')) && (c.santo && !c.santo.toLowerCase().includes('no especificado'));
       const tieneFechaNac = !exist.fechaNacimiento && c.fechaNacimiento;
       if (tieneMejorSanto || tieneFechaNac) {
-        mapa.set(norm, { ...exist, ...c });
+        mapa.set(baseKey, { ...exist, ...c });
       }
     }
   }
@@ -183,12 +246,12 @@ export async function runDailyDigest(force = false) {
     getDoc(docUbicacion)
   ]);
 
-  const cumpleanos = deduplicarCumpleanos(snapCumples.docs.map(d => ({ id: d.id, ...d.data() })));
-  const integrantes = snapMiembros.docs.map(d => ({ id: d.id, ...d.data() }));
-  const eventos = snapEventos.docs.map(d => ({ id: d.id, ...d.data() }));
-  const citasMedicas = snapCitas.docs.map(d => ({ id: d.id, ...d.data() }));
-  const trasladosPadres = snapTraslados.docs.map(d => ({ id: d.id, ...d.data() }));
-  const vacaciones = snapVacaciones.docs.map(d => ({ id: d.id, ...d.data() }));
+  const integrantes = snapMiembros.docs.map(d => ({ ...d.data(), id: d.id }));
+  const cumpleanos = deduplicarCumpleanos(snapCumples.docs.map(d => ({ ...d.data(), id: d.id })), integrantes);
+  const eventos = snapEventos.docs.map(d => ({ ...d.data(), id: d.id }));
+  const citasMedicas = snapCitas.docs.map(d => ({ ...d.data(), id: d.id }));
+  const trasladosPadres = snapTraslados.docs.map(d => ({ ...d.data(), id: d.id }));
+  const vacaciones = snapVacaciones.docs.map(d => ({ ...d.data(), id: d.id }));
   const ubicacionPadres = resolverUbicacionPadres(snapUbicacion, trasladosPadres, hoyIso);
 
   // 2. Filtrar celebraciones y avisos de hoy y mañana con deduplicación estricta
@@ -196,11 +259,12 @@ export async function runDailyDigest(force = false) {
   const cumplesVistos = new Set();
   cumpleanos.forEach(c => {
     if (!c.fecha || !c.fecha.includes('-')) return;
+    if (!esMiembroActivoValido(c.nombre, integrantes)) return;
     const parts = c.fecha.split('-');
     const m = parts.length === 3 ? parseInt(parts[1], 10) : parseInt(parts[0], 10);
     const d = parts.length === 3 ? parseInt(parts[2], 10) : parseInt(parts[1], 10);
     if (m === hMes && d === hDia) {
-      const norm = (c.nombre || '').toLowerCase().trim();
+      const norm = (c.nombre || '').toLowerCase().split('(')[0].trim();
       if (!cumplesVistos.has(norm)) {
         cumplesVistos.add(norm);
         cumplesDeHoy.push(c);
@@ -211,14 +275,16 @@ export async function runDailyDigest(force = false) {
   const santosDeHoy = [];
   const santosVistos = new Set();
   integrantes.forEach(i => {
-    const norm = (i.nombre || '').toLowerCase().trim();
+    if (!esMiembroActivoValido(i.nombre, integrantes)) return;
+    const norm = (i.nombre || '').toLowerCase().split('(')[0].trim();
     if (i.santo && matchesSaintDate(i.santo, hoyObj) && !santosVistos.has(norm)) {
       santosVistos.add(norm);
       santosDeHoy.push({ nombre: i.nombre, santo: i.santo });
     }
   });
   cumpleanos.forEach(c => {
-    const norm = (c.nombre || '').toLowerCase().trim();
+    if (!esMiembroActivoValido(c.nombre, integrantes)) return;
+    const norm = (c.nombre || '').toLowerCase().split('(')[0].trim();
     if (c.santo && matchesSaintDate(c.santo, hoyObj) && !santosVistos.has(norm)) {
       santosVistos.add(norm);
       santosDeHoy.push({ nombre: c.nombre, santo: c.santo });
@@ -425,6 +491,10 @@ export async function runDailyDigest(force = false) {
 
   const replyMarkup = {
     inline_keyboard: [
+      [
+        { text: "🌿 Están en Esgaravita", callback_data: "ubicacion:alcala" },
+        { text: "🏢 Están en Madrid", callback_data: "ubicacion:madrid" }
+      ],
       [
         { text: "🚗 Traslados Padres", url: "https://familiabarnuevoapp.web.app/?tab=traslados" },
         { text: "🩺 Citas y Salud", url: "https://familiabarnuevoapp.web.app/?tab=citas" }

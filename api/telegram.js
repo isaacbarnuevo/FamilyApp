@@ -1,7 +1,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
-import { getFirestore, collection, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore';
-import { runDailyDigest, resolverUbicacionPadres, deduplicarCumpleanos } from '../scripts/telegram_daily_cron.mjs';
+import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
+import { runDailyDigest, resolverUbicacionPadres, deduplicarCumpleanos, matchesSaintDate, esMiembroActivoValido } from '../scripts/telegram_daily_cron.mjs';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCPc3BTDzRFts7TJYhEbrFjZ-fre5nsmXQ",
@@ -53,24 +53,32 @@ function formatearFechaBonita(fechaStr) {
   return fechaStr;
 }
 
-function matchesSaintDate(santoStr, fechaObj) {
-  if (!santoStr || typeof santoStr !== 'string') return false;
-  const s = santoStr.toLowerCase();
-  if (s.includes('no especificado') || s.includes('desconocido')) return false;
+async function guardarUbicacionManualFirestore(nuevaUbicacion, autorNombre = 'Telegram') {
+  const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  try {
+    await signInAnonymously(auth);
+  } catch (e) {}
 
-  const dia = fechaObj.getDate();
-  const mesIndex = fechaObj.getMonth();
-  const mesNombre = MESES[mesIndex];
+  const nowIso = new Date().toISOString();
+  const payload = {
+    ubicacion: nuevaUbicacion,
+    modo: 'manual',
+    esManual: true,
+    fechaCambio: nowIso,
+    fecha: nowIso,
+    actualizadoPor: autorNombre
+  };
 
-  const patron1 = `${dia} de ${mesNombre}`;
-  const patron2 = `${dia}/${mesIndex + 1}`;
-  const patron3 = `${dia}-${mesIndex + 1}`;
-  const patron4 = `${dia.toString().padStart(2, '0')}/${(mesIndex + 1).toString().padStart(2, '0')}`;
-
-  return s.includes(patron1) || s.includes(patron2) || s.includes(patron3) || s.includes(patron4);
+  await Promise.all([
+    setDoc(doc(db, 'artifacts', APP_ID, 'public', 'config_ubicacion_padres'), payload, { merge: true }),
+    setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'configuracion', 'config_ubicacion_padres'), payload, { merge: true })
+  ]);
+  return nuevaUbicacion;
 }
 
-async function enviarRespuestaTelegram(chatId, texto, replyToMessageId = null) {
+async function enviarRespuestaTelegram(chatId, texto, replyToMessageId = null, replyMarkup = null) {
   try {
     const body = {
       chat_id: chatId,
@@ -80,6 +88,9 @@ async function enviarRespuestaTelegram(chatId, texto, replyToMessageId = null) {
     };
     if (replyToMessageId) {
       body.reply_to_message_id = replyToMessageId;
+    }
+    if (replyMarkup) {
+      body.reply_markup = replyMarkup;
     }
     await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: 'POST',
@@ -152,16 +163,17 @@ async function obtenerDatosFirestore() {
     getDoc(docUbicacion)
   ]);
 
-  const trasladosList = snapTraslados.docs.map(d => ({ id: d.id, ...d.data() }));
+  const integrantesList = snapMiembros.docs.map(d => ({ ...d.data(), id: d.id }));
+  const trasladosList = snapTraslados.docs.map(d => ({ ...d.data(), id: d.id }));
   const ubicacionPadres = resolverUbicacionPadres(snapUbicacion, trasladosList, getFechaHoySpain());
 
   return {
-    cumpleanos: deduplicarCumpleanos(snapCumples.docs.map(d => ({ id: d.id, ...d.data() }))),
-    integrantes: snapMiembros.docs.map(d => ({ id: d.id, ...d.data() })),
-    citasMedicas: snapCitas.docs.map(d => ({ id: d.id, ...d.data() })),
+    cumpleanos: deduplicarCumpleanos(snapCumples.docs.map(d => ({ ...d.data(), id: d.id })), integrantesList),
+    integrantes: integrantesList,
+    citasMedicas: snapCitas.docs.map(d => ({ ...d.data(), id: d.id })),
     trasladosPadres: trasladosList,
-    eventos: snapEventos.docs.map(d => ({ id: d.id, ...d.data() })),
-    vacaciones: snapVacaciones.docs.map(d => ({ id: d.id, ...d.data() })),
+    eventos: snapEventos.docs.map(d => ({ ...d.data(), id: d.id })),
+    vacaciones: snapVacaciones.docs.map(d => ({ ...d.data(), id: d.id })),
     ubicacionPadres
   };
 }
@@ -251,6 +263,24 @@ async function procesarCallbackQuery(callbackQuery) {
   const queryId = callbackQuery.id;
   const user = callbackQuery.from;
 
+  if (data.startsWith('ubicacion:')) {
+    const destCode = data.split(':')[1];
+    const nuevaUbicacion = destCode === 'madrid' ? 'Madrid' : 'Alcalá (Esgaravita)';
+    const autor = user?.first_name || user?.username || 'Telegram';
+
+    await guardarUbicacionManualFirestore(nuevaUbicacion, `${autor} (Telegram)`);
+    await answerCallbackQuery(queryId, `🏡 Ubicación fijada en: ${nuevaUbicacion}`);
+
+    if (callbackQuery.message) {
+      const chatId = callbackQuery.message.chat.id;
+      await enviarRespuestaTelegram(
+        chatId,
+        `🏡 <b>Ubicación actualizada:</b> <b>${autor}</b> ha confirmado que Papá y Mamá están en <b>${nuevaUbicacion}</b>.`
+      );
+    }
+    return;
+  }
+
   if (!data.startsWith('rsvp:')) {
     await answerCallbackQuery(queryId, 'Acción no soportada');
     return;
@@ -303,7 +333,7 @@ async function procesarCallbackQuery(callbackQuery) {
 
   // Identificar el integrante familiar
   const snapMiembros = await getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'miembros'));
-  const integrantes = snapMiembros.docs.map(d => ({ id: d.id, ...d.data() }));
+  const integrantes = snapMiembros.docs.map(d => ({ ...d.data(), id: d.id }));
 
   const firstName = (user.first_name || '').trim().toLowerCase();
   const username = (user.username || '').trim().toLowerCase();
@@ -399,7 +429,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, ignored: 'Empty update' });
   }
 
-  // Manejar clics en botones de confirmación (RSVP) de Quedadas en Telegram
+  // Manejar clics en botones de confirmación (RSVP o ubicación) en Telegram
   if (update.callback_query) {
     try {
       await procesarCallbackQuery(update.callback_query);
@@ -430,7 +460,29 @@ export default async function handler(req, res) {
   const texto = (msg.text || '').trim();
   const messageId = msg.message_id;
 
-  if (!texto.startsWith('/') || !chatId) {
+  if (!chatId || !texto) {
+    return res.status(200).json({ ok: true, ignored: 'No text or chatId' });
+  }
+
+  // Detectar si Mamá, Papá o algún hermano escribe en lenguaje natural dónde están (ej. "Estamos en la Esgaravita", "Están en Madrid")
+  if (!texto.startsWith('/')) {
+    const matchUbicacion = texto.match(/(?:estamos|est[aá]n|padres\s+est[aá]n|pap[aá]\s+y\s+mam[aá]\s+est[aá]n)\s+en\s+(?:la\s+)?(esgaravita|alcal[aá]|madrid)/i);
+    if (matchUbicacion) {
+      try {
+        const lugarRaw = matchUbicacion[1].toLowerCase();
+        const nuevaUbi = lugarRaw.includes('madrid') ? 'Madrid' : 'Alcalá (Esgaravita)';
+        const autor = msg.from?.first_name || msg.from?.username || 'Familiar';
+        await guardarUbicacionManualFirestore(nuevaUbi, `${autor} (Telegram)`);
+        await enviarRespuestaTelegram(
+          chatId,
+          `🏡 ¡Anotado, <b>${autor}</b>! He actualizado la ubicación de Papá y Mamá en la web a: <b>${nuevaUbi}</b>.`,
+          messageId
+        );
+        return res.status(200).json({ ok: true, type: 'natural_location_updated', ubicacion: nuevaUbi });
+      } catch (e) {
+        console.error('Error guardando ubicación por texto:', e);
+      }
+    }
     return res.status(200).json({ ok: true, ignored: 'Not a command' });
   }
 
@@ -453,6 +505,7 @@ export default async function handler(req, res) {
         const ayudaTxt =
           `👋 <b>¡Hola! Soy el Bot de FamilyApp</b> 🏡\n\n` +
           `Puedes consultarme lo que necesites usando estos comandos:\n\n` +
+          `🏡 <b>/ubicacion</b> — Ver o cambiar dónde están Papá y Mamá (Alcalá / Madrid)\n` +
           `🚗 <b>/traslados</b> — Próximos viajes de los padres y quién conduce\n` +
           `🏥 <b>/citas</b> — Próximas citas médicas de Papá y Mamá\n` +
           `🍖 <b>/eventos</b> — Barbacoas, comidas y quedadas familiares\n` +
@@ -463,6 +516,38 @@ export default async function handler(req, res) {
           `❓ <b>/ayuda</b> — Ver este menú de ayuda\n\n` +
           `👉 <a href="https://familiabarnuevoapp.web.app">Abrir FamilyApp en la Web</a>`;
         await enviarRespuestaTelegram(chatId, ayudaTxt, messageId);
+        break;
+      }
+
+      case '/ubicacion':
+      case '/esgaravita':
+      case '/alcala':
+      case '/madrid': {
+        const arg = texto.toLowerCase();
+        const autor = msg.from?.first_name || msg.from?.username || 'Telegram';
+        if (comando === '/madrid' || arg.includes('madrid')) {
+          await guardarUbicacionManualFirestore('Madrid', `${autor} (Telegram)`);
+          await enviarRespuestaTelegram(chatId, `🏡 ✅ Ubicación de Papá y Mamá fijada en: <b>Madrid 🏢</b>`, messageId);
+        } else if (comando === '/esgaravita' || comando === '/alcala' || arg.includes('alcala') || arg.includes('alcalá') || arg.includes('esgaravita')) {
+          await guardarUbicacionManualFirestore('Alcalá (Esgaravita)', `${autor} (Telegram)`);
+          await enviarRespuestaTelegram(chatId, `🏡 ✅ Ubicación de Papá y Mamá fijada en: <b>Alcalá (Esgaravita) 🌿</b>`, messageId);
+        } else {
+          const { ubicacionPadres } = await obtenerDatosFirestore();
+          const btnMarkup = {
+            inline_keyboard: [
+              [
+                { text: "🌿 Están en Esgaravita", callback_data: "ubicacion:alcala" },
+                { text: "🏢 Están en Madrid", callback_data: "ubicacion:madrid" }
+              ]
+            ]
+          };
+          await enviarRespuestaTelegram(
+            chatId,
+            `🏡 <b>Ubicación actual de Papá y Mamá:</b> <b>${ubicacionPadres}</b>\n\n👇 Toca un botón si deseas cambiarla:`,
+            messageId,
+            btnMarkup
+          );
+        }
         break;
       }
 
@@ -685,11 +770,12 @@ export default async function handler(req, res) {
         const cumplesVistos = new Set();
         cumpleanos.forEach(c => {
           if (!c.fecha || !c.fecha.includes('-')) return;
+          if (!esMiembroActivoValido(c.nombre, integrantes)) return;
           const parts = c.fecha.split('-');
           const m = parts.length === 3 ? parseInt(parts[1], 10) : parseInt(parts[0], 10);
           const d = parts.length === 3 ? parseInt(parts[2], 10) : parseInt(parts[1], 10);
           if (m === hMes && d === hDia) {
-            const norm = (c.nombre || '').toLowerCase().trim();
+            const norm = (c.nombre || '').toLowerCase().split('(')[0].trim();
             if (!cumplesVistos.has(norm)) {
               cumplesVistos.add(norm);
               cumplesHoy.push(c);
@@ -700,14 +786,16 @@ export default async function handler(req, res) {
         const santosHoy = [];
         const santosVistos = new Set();
         integrantes.forEach(i => {
-          const norm = (i.nombre || '').toLowerCase().trim();
+          if (!esMiembroActivoValido(i.nombre, integrantes)) return;
+          const norm = (i.nombre || '').toLowerCase().split('(')[0].trim();
           if (i.santo && matchesSaintDate(i.santo, hoyObj) && !santosVistos.has(norm)) {
             santosVistos.add(norm);
             santosHoy.push(i.nombre);
           }
         });
         cumpleanos.forEach(c => {
-          const norm = (c.nombre || '').toLowerCase().trim();
+          if (!esMiembroActivoValido(c.nombre, integrantes)) return;
+          const norm = (c.nombre || '').toLowerCase().split('(')[0].trim();
           if (c.santo && matchesSaintDate(c.santo, hoyObj) && !santosVistos.has(norm)) {
             santosVistos.add(norm);
             santosHoy.push(c.nombre);
@@ -913,15 +1001,19 @@ export default async function handler(req, res) {
         const nombresVistos = new Set();
 
         integrantes.forEach(i => {
-          if (i.santo && !nombresVistos.has(i.nombre)) {
+          if (!esMiembroActivoValido(i.nombre, integrantes)) return;
+          const baseKey = (i.nombre || '').toLowerCase().split('(')[0].trim();
+          if (i.santo && !nombresVistos.has(baseKey)) {
             todosMiembrosYSantos.push({ nombre: i.nombre, santo: i.santo });
-            nombresVistos.add(i.nombre);
+            nombresVistos.add(baseKey);
           }
         });
         cumpleanos.forEach(c => {
-          if (c.santo && !nombresVistos.has(c.nombre)) {
+          if (!esMiembroActivoValido(c.nombre, integrantes)) return;
+          const baseKey = (c.nombre || '').toLowerCase().split('(')[0].trim();
+          if (c.santo && !nombresVistos.has(baseKey)) {
             todosMiembrosYSantos.push({ nombre: c.nombre, santo: c.santo });
-            nombresVistos.add(c.nombre);
+            nombresVistos.add(baseKey);
           }
         });
 
