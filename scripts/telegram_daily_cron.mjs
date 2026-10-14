@@ -34,7 +34,7 @@ function getFechaHoySpain() {
   return `${year}-${month}-${day}`;
 }
 
-const NOMBRES_DEMO_EXCLUIDOS = new Set(['lucas', 'elena', 'laura', 'paulino', 'sofia', 'sofía', 'carlos']);
+const NOMBRES_DEMO_EXCLUIDOS = new Set(['lucas']);
 
 function normalizarTexto(txt) {
   return (txt || '')

@@ -1470,9 +1470,9 @@ export default function App() {
     if (integrantes.length === 0) return;
 
     const runDeduplication = async () => {
-      // 1. Limpieza de nombres ficticios de plantilla ("Laura", "Paulino", "Lucas", "Elena") en la nube
+      // 1. Limpieza de nombres ficticios de plantilla (únicamente "Lucas") en la nube
       if (isCloudMode && user && !isLocalMode) {
-        const nombresFicticios = new Set(['laura', 'paulino', 'lucas', 'elena']);
+        const nombresFicticios = new Set(['lucas']);
         const miembrosFicticios = integrantes.filter(i => i && i.nombre && nombresFicticios.has(i.nombre.toLowerCase().trim()));
         if (miembrosFicticios.length > 0) {
           try {
@@ -6684,10 +6684,21 @@ export default function App() {
     return listadoHermanos.map(herm => {
       const suPareja = parejas.find(p => p && (p.parejaDe === herm.nombre || herm.parejaDe === p.nombre));
       
-      const susHijos = integrantes.filter(h => 
-        h && h.rol === 'Hijos' && h.padres && Array.isArray(h.padres) && 
-        (h.padres.includes(herm.nombre) || (suPareja && h.padres.includes(suPareja.nombre)))
-      );
+      const susHijos = integrantes.filter(h => {
+        if (!h) return false;
+        const esRolHijo = h.rol === 'Hijos' || h.tipoFamiliar === 'Hijos' || h.rol === 'Sobrinos';
+        if (!esRolHijo) return false;
+        if (!h.padres || !Array.isArray(h.padres)) return false;
+        
+        const normHerm = (herm.nombre || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+        const normPareja = suPareja ? (suPareja.nombre || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim() : '';
+
+        return h.padres.some(p => {
+          const normP = (p || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+          return (normHerm && (normP === normHerm || normP.includes(normHerm) || normHerm.includes(normP))) ||
+                 (normPareja && (normP === normPareja || normP.includes(normPareja) || normPareja.includes(normP)));
+        });
+      });
 
       // Ordenar por fecha de nacimiento (de mayor a menor edad / orden de nacimiento)
       susHijos.sort((a, b) => {
