@@ -102,6 +102,22 @@ async function enviarRespuestaTelegram(chatId, texto, replyToMessageId = null, r
   }
 }
 
+async function setMessageReactionTelegram(chatId, messageId, emoji = '👍') {
+  try {
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMessageReaction`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: messageId,
+        reaction: [{ type: 'emoji', emoji: emoji }]
+      })
+    });
+  } catch (err) {
+    console.error('Error enviando reacción a Telegram:', err);
+  }
+}
+
 async function answerCallbackQuery(callbackQueryId, text, showAlert = false) {
   try {
     await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
@@ -404,6 +420,324 @@ async function procesarCallbackQuery(callbackQuery) {
   }
 }
 
+function obtenerAutorFamiliar(user, integrantes = []) {
+  if (!user) return 'Familiar';
+  const firstName = (user.first_name || '').trim();
+  const lastName = (user.last_name || '').trim();
+  const username = (user.username || '').trim().toLowerCase().replace('@', '');
+  const fullName = `${firstName} ${lastName}`.trim().toLowerCase();
+
+  if (/encarna|mam[aá]/i.test(fullName)) return 'Mamá';
+  if (/jaime|pap[aá]/i.test(fullName)) return 'Papá';
+  if (/mariuge/i.test(fullName)) return 'Tía Mariuge';
+  if (/rebe/i.test(fullName)) return 'Rebeca';
+  if (/isaac|isik/i.test(fullName)) return 'Isaac';
+  if (/m[oó]nica/i.test(fullName)) return 'Mónica';
+  if (/mar[ií]a/i.test(fullName)) return 'María';
+  if (/bartek/i.test(fullName)) return 'Bartek';
+  if (/juan/i.test(fullName)) return 'Juan';
+  if (/ana\b|anita/i.test(fullName)) return 'Ana';
+  if (/javi/i.test(fullName)) return 'Javier';
+  if (/cristina|cris\b/i.test(fullName)) return 'Cristina';
+  if (/teresa|tere\b/i.test(fullName)) return 'Teresa';
+  if (/jorge/i.test(fullName)) return 'Jorge';
+
+  const match = integrantes.find(i => {
+    const n = (i.nombre || '').toLowerCase();
+    const alias = (i.alias || '').toLowerCase();
+    const tg = (i.telegram || i.telegramUser || '').toLowerCase().replace('@', '');
+    return (
+      (username && tg && tg === username) ||
+      (firstName && n.includes(firstName.toLowerCase())) ||
+      (alias && firstName && alias.includes(firstName.toLowerCase()))
+    );
+  });
+
+  return match?.nombre || firstName || user.username || 'Familiar';
+}
+
+function normalizarNombreFamiliar(nombreRaw, integrantes = [], autorNombre = 'Familiar') {
+  if (!nombreRaw) return null;
+  const n = nombreRaw.trim().toLowerCase();
+  if (['yo', 'mí', 'mi', 'nosotros', 'nosotras', 'servidor'].includes(n)) return autorNombre;
+  if (n.includes('mariuge')) return 'Tía Mariuge';
+  if (n.includes('rebe')) return 'Rebeca';
+  if (n.includes('isik') || n.includes('isaac')) return 'Isaac';
+  if (n.includes('moni')) return 'Mónica';
+  if (n.includes('bartek')) return 'Bartek';
+  if (n.includes('juan')) return 'Juan';
+  if (n.includes('ana')) return 'Ana';
+  if (n.includes('javi')) return 'Javier';
+  if (n.includes('cris')) return 'Cristina';
+  if (n.includes('tere')) return 'Teresa';
+  if (n.includes('jorge')) return 'Jorge';
+  if (n.includes('mari') && !n.includes('mariuge')) return 'María';
+  if (n.includes('papá') || n.includes('papa') || n.includes('jaime')) return 'Papá (Jaime)';
+  if (n.includes('mamá') || n.includes('mama') || n.includes('encarna')) return 'Mamá (Encarnación)';
+
+  const match = integrantes.find(i => {
+    const iname = (i.nombre || '').toLowerCase();
+    return iname.includes(n) || n.includes(iname.split(' ')[0]);
+  });
+  if (match) return match.nombre;
+
+  return nombreRaw.charAt(0).toUpperCase() + nombreRaw.slice(1);
+}
+
+async function procesarMensajeNaturalGrupo(msg, chatId, texto, messageId) {
+  const replyTo = msg.reply_to_message;
+  const replyText = (replyTo?.text || '').toLowerCase();
+  const t = texto.toLowerCase();
+
+  const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  try {
+    await signInAnonymously(auth);
+  } catch (e) {}
+
+  // 1. Detección de Ubicación de los Padres (ej: "Estamos en la Esgaravita", "Están en Madrid", "Ya hemos llegado a Alcalá")
+  const matchUbicacion = texto.match(/(?:estamos|est[aá]n|padres\s+est[aá]n|pap[aá]\s+y\s+mam[aá]\s+est[aá]n|ya\s+hemos\s+llegado|ya\s+estamos)\s+en\s+(?:la\s+)?(esgaravita|alcal[aá]|madrid)/i);
+  if (matchUbicacion) {
+    const lugarRaw = matchUbicacion[1].toLowerCase();
+    const nuevaUbi = lugarRaw.includes('madrid') ? 'Madrid' : 'Alcalá (Esgaravita)';
+    const snapMiembros = await getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'miembros'));
+    const integrantes = snapMiembros.docs.map(d => ({ ...d.data(), id: d.id }));
+    const autor = obtenerAutorFamiliar(msg.from, integrantes);
+
+    await guardarUbicacionManualFirestore(nuevaUbi, `${autor} (Telegram)`);
+    await setMessageReactionTelegram(chatId, messageId, '🏡');
+    await enviarRespuestaTelegram(
+      chatId,
+      `🏡 ✅ ¡Anotado, <b>${autor}</b>! He actualizado la ubicación de Papá y Mamá en la app a: <b>${nuevaUbi}</b>.`,
+      messageId
+    );
+    return { tipo: 'ubicacion', ubicacion: nuevaUbi };
+  }
+
+  // 2. Detección de Quedadas / Barbacoas / Comidas
+  const esQuedada = /(?:barbacoa|quedada|paella|comida|cena|reuni[oó]n)/i.test(t) || /(?:barbacoa|quedada|evento)/i.test(replyText);
+  const esApuntarse = /(?:me\s+apunto|ap[uú]ntame|nos\s+apuntamos|contad\s+conmigo|contad\s+con\s+nosotros|voy\s+yo|asistir[eé]|asistiremos)/i.test(t);
+  const esDesapuntarse = /(?:no\s+puedo|no\s+podr[eé]|no\s+vamos|no\s+voy|me\s+desapunto|no\s+cont[eé]is)/i.test(t);
+
+  if (esQuedada && (esApuntarse || esDesapuntarse)) {
+    const snapMiembros = await getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'miembros'));
+    const integrantes = snapMiembros.docs.map(d => ({ ...d.data(), id: d.id }));
+    const autor = obtenerAutorFamiliar(msg.from, integrantes);
+
+    const snapEventos = await getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'eventos'));
+    const hoyIso = getFechaHoySpain();
+    const eventosFuturos = snapEventos.docs
+      .map(d => ({ ...d.data(), id: d.id }))
+      .filter(e => (e.fechaFin || e.fecha) >= hoyIso)
+      .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+
+    if (eventosFuturos.length > 0) {
+      const evento = eventosFuturos[0];
+      let asistentes = Array.isArray(evento.asistentes) ? [...evento.asistentes] : [];
+      let votos = { ...(evento.votos || {}) };
+
+      if (esApuntarse) {
+        if (!asistentes.includes(autor)) asistentes.push(autor);
+        votos[autor] = '¡Me apunto! 🙋‍♂️';
+      } else {
+        asistentes = asistentes.filter(a => a !== autor);
+        votos[autor] = 'No puedo esta vez 😔';
+      }
+
+      await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'eventos', evento.id), {
+        asistentes,
+        votos,
+        actualizadoEl: new Date().toISOString()
+      });
+
+      await setMessageReactionTelegram(chatId, messageId, esApuntarse ? '🎉' : '👍');
+      const respTxt = esApuntarse
+        ? `🍖 🎉 ¡Anotado, <b>${autor}</b>! Te he apuntado a la quedada <b>"${evento.titulo}"</b> (${formatearFechaBonita(evento.fecha)}). ¡Ya sois ${asistentes.length} confirmados!`
+        : `🍖 👍 Entendido, <b>${autor}</b>. He actualizado la quedada <b>"${evento.titulo}"</b> marcando que no puedes asistir esta vez.`;
+
+      await enviarRespuestaTelegram(chatId, respTxt, messageId);
+      return { tipo: 'evento', eventoId: evento.id, accion: esApuntarse ? 'apunto' : 'desapunto' };
+    }
+  }
+
+  // 3. Detección de Traslados de los Padres (ej: "Yo llevo a los padres el viernes", "Yo hago el traslado")
+  const esTraslado = /(?:traslado|viaje\s+de\s+los\s+padres|llevar\s+a\s+los\s+padres|llevo\s+a\s+los\s+padres|llevo\s+a\s+pap[aá]\s+y\s+mam[aá]|conducir\s+yo)/i.test(t) || /(?:traslado\s+de\s+los\s+padres|traslado)/i.test(replyText);
+  const conduceYo = /(?:yo\s+llevo|yo\s+conduzco|yo\s+hago|me\s+encargo\s+yo|conduzco\s+yo|llevo\s+yo)/i.test(t);
+
+  if (esTraslado && conduceYo) {
+    const snapMiembros = await getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'miembros'));
+    const integrantes = snapMiembros.docs.map(d => ({ ...d.data(), id: d.id }));
+    const autor = obtenerAutorFamiliar(msg.from, integrantes);
+
+    const snapTraslados = await getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'trasladosPadres'));
+    const hoyIso = getFechaHoySpain();
+    const trasladosPendientes = snapTraslados.docs
+      .map(d => ({ ...d.data(), id: d.id }))
+      .filter(tr => tr.estado !== 'realizado' && tr.fecha && tr.fecha >= hoyIso)
+      .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+
+    const trasladoTarget = trasladosPendientes.find(tr => !tr.conductor || tr.conductor === 'Pendiente de asignar') || trasladosPendientes[0];
+
+    if (trasladoTarget) {
+      await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'trasladosPadres', trasladoTarget.id), {
+        conductor: autor,
+        actualizadoPor: `${autor} (Telegram)`,
+        actualizadoEl: new Date().toISOString()
+      });
+
+      await setMessageReactionTelegram(chatId, messageId, '🚗');
+      await enviarRespuestaTelegram(
+        chatId,
+        `🚗 ✅ ¡Muchísimas gracias, <b>${autor}</b>!\n\n` +
+        `Te he asignado como conductor/a para el traslado de los padres:\n` +
+        `• <b>${trasladoTarget.origen} ➔ ${trasladoTarget.destino}</b>\n` +
+        `• 📅 <b>${formatearFechaBonita(trasladoTarget.fecha)}</b> (${trasladoTarget.hora || trasladoTarget.momentoDia || 'Hora por definir'})\n\n` +
+        `👉 <a href="https://familiabarnuevoapp.web.app/?tab=traslados">Ver en FamilyApp</a>`,
+        messageId
+      );
+      return { tipo: 'traslado', trasladoId: trasladoTarget.id, conductor: autor };
+    }
+  }
+
+  // 4. Detección de Citas Médicas (Acompañamiento, Ida / Vuelta / Por su cuenta / Autobús / Andando)
+  const tienePalabraMedica = /(?:dentista|m[eé]dico|doctor|consulta|hospital|ambulatorio|alcarria|quir[oó]n|endocrino|oculista|oftalm[oó]logo|trauma|an[aá]lisis|vacuna|gripe|pod[oó]logo|juan\s+de\s+austria|cita)/i.test(t) || /(?:cita\s+m[eé]dica|dentista|consulta|m[eé]dico)/i.test(replyText);
+  const tienePalabraTransporte = /(?:nos\s+lleva|me\s+lleva|le\s+lleva|la\s+lleva|llevo\s+yo|yo\s+llevo|yo\s+(?:le\s+|la\s+)?acerco|acompa[ñn]o\s+yo|yo\s+acompa[ñn]o|recojo\s+yo|yo\s+recojo|le\s+recoge|la\s+recoge|volveremos|volvere|volver[aá]n|volver[eé]|por\s+mis\s+medios|por\s+nuestra\s+cuenta|por\s+su\s+cuenta|autob[uú]s|andando|voy\s+sol[oa]|vamos\s+sol[oa]s|no\s+necesita\s+acompa[ñn]ante|no\s+hace\s+falta\s+que\s+(?:me|nos)\s+(?:llev[eé]is|acompa[ñn][eé]is))/i.test(t);
+
+  const hoyIso = getFechaHoySpain();
+  const snapCitas = await getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'citasMedicas'));
+  const citasPendientes = snapCitas.docs
+    .map(d => ({ ...d.data(), id: d.id }))
+    .filter(c => c.estado !== 'completada' && c.fecha && c.fecha >= hoyIso)
+    .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '') || (a.hora || '').localeCompare(b.hora || ''));
+
+  const citasHoyPendientes = citasPendientes.some(c => c.fecha === hoyIso);
+
+  const esMensajeCita = (tienePalabraMedica && tienePalabraTransporte) ||
+    (tienePalabraTransporte && replyText.includes('cita')) ||
+    (tienePalabraTransporte && /(?:a\s+pap[aá]|a\s+mam[aá])/i.test(t)) ||
+    (tienePalabraTransporte && citasHoyPendientes);
+
+  if (esMensajeCita && citasPendientes.length > 0) {
+    const snapMiembros = await getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'miembros'));
+    const integrantes = snapMiembros.docs.map(d => ({ ...d.data(), id: d.id }));
+    const autor = obtenerAutorFamiliar(msg.from, integrantes);
+
+    let citaTarget = null;
+    for (const c of citasPendientes) {
+      const esp = (c.especialidad || '').toLowerCase().trim();
+      const centro = (c.centro || '').toLowerCase().trim();
+      if ((esp && (t.includes(esp) || replyText.includes(esp))) || (centro && (t.includes(centro) || replyText.includes(centro)))) {
+        citaTarget = c;
+        break;
+      }
+    }
+
+    if (!citaTarget) {
+      citaTarget = citasPendientes.find(c => c.fecha === hoyIso && (!c.quienLleva || c.quienLleva === 'Pendiente de asignar' || !c.quienRecoge || c.quienRecoge === 'Pendiente de asignar'));
+    }
+
+    if (!citaTarget) {
+      citaTarget = citasPendientes.find(c => c.fecha === hoyIso) || citasPendientes[0];
+    }
+
+    if (citaTarget) {
+      const esPorSusMedios = /(?:por\s+(?:mis|nuestros?|sus)\s+medios|por\s+(?:mi|nuestra|su)\s+cuenta|autob[uú]s|andando|voy\s+sol[oa]|vamos\s+sol[oa]s|no\s+necesita\s+acompa[ñn]ante|no\s+hace\s+falta\s+que\s+(?:me|nos)\s+(?:llev[eé]is|acompa[ñn][eé]is))/i.test(t);
+
+      const matchLlevaTercero = texto.match(/(?:nos|me|le|la)\s+lleva\s+([a-záéíóúñ\s]+?)(?:\s+y\s+|\s*,\s*|\s*\.|$)/i);
+      const matchLlevaYo = /(?:llevo\s+yo|yo\s+llevo|yo\s+(?:le\s+|la\s+)?acerco|acompa[ñn]o\s+yo|yo\s+acompa[ñn]o|me\s+encargo\s+de\s+llevar)/i.test(t);
+      const matchRecogeTercero = texto.match(/(?:(?:le|la)\s+)?recoge\s+([a-záéíóúñ\s]+?)(?:\s+y\s+|\s*,\s*|\s*\.|$)/i);
+      const matchRecogeYo = /(?:recojo\s+yo|yo\s+recojo|yo\s+(?:la|le)\s+recojo)/i.test(t);
+      const matchVueltaPorCuenta = /(?:volveremos|volvere|volver[aá]n|volver[eé]|vuelta|regreso)\s+(?:por\s+(?:nuestra|su|mi)\s+cuenta|sol[oa]s?|andando|en\s+autob[uú]s)/i.test(t);
+
+      let quienLleva = null;
+      let quienRecoge = null;
+      let noNecesitaAcompanante = false;
+
+      if (matchLlevaTercero) {
+        quienLleva = normalizarNombreFamiliar(matchLlevaTercero[1], integrantes, autor);
+      } else if (matchLlevaYo) {
+        quienLleva = autor;
+      }
+
+      if (matchVueltaPorCuenta) {
+        quienRecoge = 'Por su cuenta';
+      } else if (matchRecogeTercero) {
+        quienRecoge = normalizarNombreFamiliar(matchRecogeTercero[1], integrantes, autor);
+      } else if (matchRecogeYo) {
+        quienRecoge = autor;
+      } else if (quienLleva && !esPorSusMedios) {
+        quienRecoge = quienLleva;
+      }
+
+      if (esPorSusMedios && !quienLleva) {
+        noNecesitaAcompanante = true;
+        quienLleva = 'No necesita acompañante';
+        quienRecoge = 'No necesita acompañante';
+      }
+
+      const updateData = {
+        actualizadoPor: `${autor} (Telegram)`,
+        actualizadoEl: new Date().toISOString()
+      };
+
+      if (noNecesitaAcompanante) {
+        updateData.noNecesitaAcompanante = true;
+        updateData.acompanante = 'No necesita acompañante (por sus propios medios)';
+        updateData.quienLleva = 'No necesita acompañante';
+        updateData.quienRecoge = 'No necesita acompañante';
+        updateData.mismoConductorVuelta = true;
+        updateData.notas = citaTarget.notas ? `${citaTarget.notas} | ${texto}` : texto;
+
+        await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'citasMedicas', citaTarget.id), updateData);
+        await setMessageReactionTelegram(chatId, messageId, '👍');
+        await enviarRespuestaTelegram(
+          chatId,
+          `🏥 ✅ ¡Anotado, <b>${autor}</b>!\n\n` +
+          `He actualizado en la app que <b>${citaTarget.paciente}</b> va por sus propios medios a la cita de <b>${citaTarget.especialidad.trim()}</b> (${citaTarget.hora || ''}) y que <b>no necesita acompañante</b>. 🚶`,
+          messageId
+        );
+        return { tipo: 'cita', citaId: citaTarget.id, noNecesitaAcompanante: true };
+      } else if (quienLleva || quienRecoge) {
+        const llevaFinal = quienLleva || citaTarget.quienLleva || 'Pendiente de asignar';
+        const recogeFinal = quienRecoge || citaTarget.quienRecoge || llevaFinal;
+        const mismo = llevaFinal === recogeFinal;
+
+        updateData.quienLleva = llevaFinal;
+        updateData.quienRecoge = recogeFinal;
+        updateData.mismoConductorVuelta = mismo;
+        updateData.noNecesitaAcompanante = false;
+        updateData.acompanante = mismo ? llevaFinal : `${llevaFinal} (ida) / ${recogeFinal} (vuelta)`;
+        updateData.notas = citaTarget.notas ? `${citaTarget.notas} | ${texto}` : texto;
+
+        await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'citasMedicas', citaTarget.id), updateData);
+        await setMessageReactionTelegram(chatId, messageId, '👍');
+
+        let detalleAcomp = '';
+        if (mismo) {
+          detalleAcomp = `• 🚗 <b>Acompaña:</b> <b>${llevaFinal}</b>\n`;
+        } else {
+          detalleAcomp = `• 🚗 <b>Lleva (Ida):</b> <b>${llevaFinal}</b>\n• 🚙 <b>Recoge (Vuelta):</b> <b>${recogeFinal}</b>\n`;
+        }
+
+        await enviarRespuestaTelegram(
+          chatId,
+          `🏥 ✅ ¡Anotado, <b>${autor}</b>!\n\n` +
+          `He actualizado la cita de <b>${citaTarget.paciente}</b> (${citaTarget.especialidad.trim()}) en FamilyApp:\n` +
+          `• 📅 <b>${formatearFechaBonita(citaTarget.fecha)}</b> a las <b>${citaTarget.hora || '10:30'}</b>\n` +
+          (citaTarget.centro ? `• 📍 ${citaTarget.centro}\n` : '') +
+          `${detalleAcomp}\n` +
+          `👉 <a href="https://familiabarnuevoapp.web.app/?tab=citas">Ver cita en FamilyApp</a>`,
+          messageId
+        );
+        return { tipo: 'cita', citaId: citaTarget.id, quienLleva: llevaFinal, quienRecoge: recogeFinal };
+      }
+    }
+  }
+
+  return null;
+}
+
 export default async function handler(req, res) {
   // Manejo de peticiones GET de prueba/health check o ejecución de CRON
   if (req.method === 'GET') {
@@ -464,26 +798,17 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, ignored: 'No text or chatId' });
   }
 
-  // Detectar si Mamá, Papá o algún hermano escribe en lenguaje natural dónde están (ej. "Estamos en la Esgaravita", "Están en Madrid")
+  // Procesar mensajes en lenguaje natural del grupo (citas, traslados, ubicación, barbacoas)
   if (!texto.startsWith('/')) {
-    const matchUbicacion = texto.match(/(?:estamos|est[aá]n|padres\s+est[aá]n|pap[aá]\s+y\s+mam[aá]\s+est[aá]n)\s+en\s+(?:la\s+)?(esgaravita|alcal[aá]|madrid)/i);
-    if (matchUbicacion) {
-      try {
-        const lugarRaw = matchUbicacion[1].toLowerCase();
-        const nuevaUbi = lugarRaw.includes('madrid') ? 'Madrid' : 'Alcalá (Esgaravita)';
-        const autor = msg.from?.first_name || msg.from?.username || 'Familiar';
-        await guardarUbicacionManualFirestore(nuevaUbi, `${autor} (Telegram)`);
-        await enviarRespuestaTelegram(
-          chatId,
-          `🏡 ¡Anotado, <b>${autor}</b>! He actualizado la ubicación de Papá y Mamá en la web a: <b>${nuevaUbi}</b>.`,
-          messageId
-        );
-        return res.status(200).json({ ok: true, type: 'natural_location_updated', ubicacion: nuevaUbi });
-      } catch (e) {
-        console.error('Error guardando ubicación por texto:', e);
+    try {
+      const resNatural = await procesarMensajeNaturalGrupo(msg, chatId, texto, messageId);
+      if (resNatural) {
+        return res.status(200).json({ ok: true, natural: resNatural });
       }
+    } catch (errNatural) {
+      console.error('Error procesando mensaje natural del grupo:', errNatural);
     }
-    return res.status(200).json({ ok: true, ignored: 'Not a command' });
+    return res.status(200).json({ ok: true, ignored: 'Regular message or no action needed' });
   }
 
   // Extraer comando (soporta /citas y /citas@Familiabarnuevo_bot)
