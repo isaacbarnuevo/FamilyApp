@@ -141,6 +141,7 @@ const INTEGRANTES_PREDEFINIDOS = [
   { nombre: 'Miriam', rol: 'Hijos', padres: ['Isaac (Isik)', 'Mónica'], padrinos: [], santo: '12 de Septiembre', email: null, fechaNacimiento: '2014-11-19' },
   { nombre: 'Jaime (Hijo)', rol: 'Hijos', padres: ['Isaac (Isik)', 'Mónica'], padrinos: [], santo: '25 de Julio', email: null, fechaNacimiento: '2013-07-04' },
   { nombre: 'Francisco', rol: 'Hijos', padres: ['Isaac (Isik)', 'Mónica'], padrinos: [], santo: '4 de Octubre (San Francisco de Asís)', email: null, fechaNacimiento: '2016-12-01' },
+  { nombre: 'Elena', rol: 'Hijos', padres: ['María', 'Bartek'], padrinos: [], santo: '18 de Agosto (Santa Elena)', email: null, fechaNacimiento: '2022-10-14' },
   { nombre: 'Tía Mariuge', rol: 'Tíos/Familiares', santo: 'No especificado', email: null }
 ];
 
@@ -162,7 +163,8 @@ const CUMPLEANOS_PREDEFINIDOS = [
   { nombre: 'Nieves', fecha: '01-25', parentesco: 'Sobrino/Hijo', santo: '5 Agosto' },
   { nombre: 'Miriam', fecha: '11-19', parentesco: 'Sobrino/Hijo', santo: '12 de Septiembre' },
   { nombre: 'Jaime (Hijo)', fecha: '07-04', parentesco: 'Sobrino/Hijo', santo: '25 de Julio' },
-  { nombre: 'Francisco', fecha: '12-01', parentesco: 'Sobrino/Hijo', santo: '4 de Octubre (San Francisco de Asís)' }
+  { nombre: 'Francisco', fecha: '12-01', parentesco: 'Sobrino/Hijo', santo: '4 de Octubre (San Francisco de Asís)' },
+  { nombre: 'Elena', fecha: '10-14', parentesco: 'Sobrino/Hijo', santo: '18 de Agosto (Santa Elena)', fechaNacimiento: '2022-10-14' }
 ];
 
 // --- FUNCIONES HELPER GLOBALES ---
@@ -2432,12 +2434,21 @@ export default function App() {
     const hoyMes = hoy.getMonth() + 1;
     const hoyDia = hoy.getDate();
 
+    const santoEsValido = (s) => s && typeof s === 'string' && s !== 'No registrado' && !s.toLowerCase().includes('no especificado') && !s.toLowerCase().includes('desconocido');
+
     return [...cumpleanos]
       .filter(cumple => cumple && cumple.nombre && cumple.fecha && typeof cumple.fecha === 'string' && cumple.fecha.includes('-'))
       .map(cumple => {
-        const [mesStr, diaStr] = cumple.fecha.split('-');
-        const mes = parseInt(mesStr, 10) || 1;
-        const dia = parseInt(diaStr, 10) || 1;
+        let mes = 1;
+        let dia = 1;
+        const parts = cumple.fecha.split('-');
+        if (parts.length === 3) {
+          mes = parseInt(parts[1], 10) || 1;
+          dia = parseInt(parts[2], 10) || 1;
+        } else if (parts.length === 2) {
+          mes = parseInt(parts[0], 10) || 1;
+          dia = parseInt(parts[1], 10) || 1;
+        }
         
         let cumpleAno = hoy.getFullYear();
         if (mes < hoyMes || (mes === hoyMes && dia < hoyDia)) {
@@ -2448,11 +2459,20 @@ export default function App() {
         const diferenciaMs = fechaCumple.getTime() - hoy.getTime();
         const diasRestantes = Math.ceil(diferenciaMs / (1000 * 60 * 60 * 24));
 
-        const integranteAsociado = integrantes.find(i => i.nombre === cumple.nombre);
-        const santoTexto = cumple.santo || (integranteAsociado ? (integranteAsociado.santo || 'No registrado') : 'No registrado');
+        const normC = (cumple.nombre || '').toLowerCase().trim();
+        const baseNormC = normC.split('(')[0].trim();
+        const integranteAsociado = integrantes.find(i => {
+          const normI = (i.nombre || '').toLowerCase().trim();
+          const baseNormI = normI.split('(')[0].trim();
+          return normI === normC || (baseNormC && baseNormI === baseNormC);
+        });
+
+        const santoTexto = santoEsValido(cumple.santo)
+          ? cumple.santo
+          : (integranteAsociado && santoEsValido(integranteAsociado.santo) ? integranteAsociado.santo : (cumple.santo || 'No registrado'));
 
         let diasFaltantesSanto = null;
-        if (santoTexto && santoTexto !== 'No registrado' && !santoTexto.toLowerCase().includes('no especificado')) {
+        if (santoEsValido(santoTexto)) {
           const fechaSanto = obtenerMesDiaSanto(santoTexto);
           if (fechaSanto) {
             diasFaltantesSanto = calcularDiasRestantes(fechaSanto.mes, fechaSanto.dia);
@@ -2476,9 +2496,16 @@ export default function App() {
     // A. Procesar cumpleaños
     cumpleanos.forEach(cumple => {
       if (!cumple || !cumple.nombre || !cumple.fecha || !cumple.fecha.includes('-')) return;
-      const [mesStr, diaStr] = cumple.fecha.split('-');
-      const mes = parseInt(mesStr, 10);
-      const dia = parseInt(diaStr, 10);
+      let mes = 1;
+      let dia = 1;
+      const parts = cumple.fecha.split('-');
+      if (parts.length === 3) {
+        mes = parseInt(parts[1], 10) || 1;
+        dia = parseInt(parts[2], 10) || 1;
+      } else if (parts.length === 2) {
+        mes = parseInt(parts[0], 10) || 1;
+        dia = parseInt(parts[1], 10) || 1;
+      }
       if (isNaN(mes) || isNaN(dia)) return;
 
       const diasFaltantes = calcularDiasRestantes(mes, dia);
@@ -3269,18 +3296,70 @@ export default function App() {
     };
 
     const isLocalCumpleId = typeof editingCumpleId === 'string' && editingCumpleId.startsWith('c_');
+    let savedId = editingCumpleId;
 
     if (isCloudMode && user && !isLocalMode) {
       try {
-        if (isEditingCumple && !isLocalCumpleId) {
-          const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cumpleanos', editingCumpleId);
+        let targetDocId = (!isLocalCumpleId && editingCumpleId) ? editingCumpleId : null;
+        const snapAll = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'cumpleanos'));
+        const found = snapAll.docs.find(d => {
+          const nom = (d.data().nombre || '').toLowerCase().trim();
+          const target = (newCumple.nombre || '').toLowerCase().trim();
+          return nom === target || nom.split('(')[0].trim() === target.split('(')[0].trim();
+        });
+        if (found) {
+          targetDocId = found.id;
+        }
+
+        if (targetDocId) {
+          const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cumpleanos', targetDocId);
           await updateDoc(docRef, cumpleData);
-          triggerToast('🎉 Cumpleaños actualizado en la nube.');
+          savedId = targetDocId;
+          triggerToast('🎉 Cumpleaños y santo actualizados.');
         } else {
           const col = collection(db, 'artifacts', appId, 'public', 'data', 'cumpleanos');
-          await addDoc(col, cumpleData);
-          triggerToast('🎉 Cumpleaños guardado en la nube.');
+          const docRef = await addDoc(col, cumpleData);
+          savedId = docRef.id;
+          triggerToast('🎉 Cumpleaños y santo guardados.');
         }
+
+        // Sincronizar también con miembros en Firestore para que el santo esté en ambos sitios
+        if (cumpleData.santo) {
+          const snapMiem = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'miembros'));
+          const miembroDoc = snapMiem.docs.find(d => {
+            const nom = (d.data().nombre || '').toLowerCase().trim();
+            const target = (newCumple.nombre || '').toLowerCase().trim();
+            return nom === target || nom.split('(')[0].trim() === target.split('(')[0].trim();
+          });
+          if (miembroDoc) {
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'miembros', miembroDoc.id), {
+              santo: cumpleData.santo
+            });
+            // Actualizar integrantes en estado local
+            setIntegrantes(prev => prev.map(m => m.id === miembroDoc.id ? { ...m, santo: cumpleData.santo } : m));
+          }
+        }
+
+        // Actualizar cumpleaños en estado local inmediatamente para refresco instantáneo de la tarjeta
+        setCumpleanos(prev => {
+          const normTarget = (newCumple.nombre || '').toLowerCase().trim();
+          const exists = prev.some(c => c.id === savedId || (c.nombre || '').toLowerCase().trim() === normTarget);
+          let updated;
+          if (exists) {
+            updated = prev.map(c => {
+              const cNorm = (c.nombre || '').toLowerCase().trim();
+              if (c.id === savedId || cNorm === normTarget || cNorm.split('(')[0].trim() === normTarget.split('(')[0].trim()) {
+                return { ...c, ...cumpleData, id: savedId || c.id };
+              }
+              return c;
+            });
+          } else {
+            updated = [...prev, { id: savedId || 'c_' + Date.now(), ...cumpleData }];
+          }
+          persistLocal('cumpleanos', updated);
+          return updated;
+        });
+
         setNewCumple({ nombre: '', dia: '01', mes: '01', parentesco: 'Hermano', santo: '' });
         setShowCumpleModal(false);
         setIsEditingCumple(false);
@@ -3290,20 +3369,38 @@ export default function App() {
         triggerToast(`Error al guardar cumpleaños: ${e.message || 'Permiso denegado'}`);
       }
     } else {
-      if (isEditingCumple) {
-        const updated = cumpleanos.map(c => c.id === editingCumpleId ? { ...c, ...cumpleData } : c);
-        setCumpleanos(updated);
-        persistLocal('cumpleanos', updated);
+      let updated;
+      const normTarget = (newCumple.nombre || '').toLowerCase().trim();
+      const exists = cumpleanos.some(c => c.id === editingCumpleId || (c.nombre || '').toLowerCase().trim() === normTarget);
+      if (exists) {
+        updated = cumpleanos.map(c => {
+          const cNorm = (c.nombre || '').toLowerCase().trim();
+          if (c.id === editingCumpleId || cNorm === normTarget) {
+            return { ...c, ...cumpleData };
+          }
+          return c;
+        });
       } else {
-        const updated = [...cumpleanos, { id: 'c_' + Date.now(), ...cumpleData }];
-        setCumpleanos(updated);
-        persistLocal('cumpleanos', updated);
+        updated = [...cumpleanos, { id: 'c_' + Date.now(), ...cumpleData }];
       }
+      setCumpleanos(updated);
+      persistLocal('cumpleanos', updated);
+
+      if (cumpleData.santo) {
+        setIntegrantes(prev => prev.map(m => {
+          const mNorm = (m.nombre || '').toLowerCase().trim();
+          if (mNorm === normTarget || mNorm.split('(')[0].trim() === normTarget.split('(')[0].trim()) {
+            return { ...m, santo: cumpleData.santo };
+          }
+          return m;
+        }));
+      }
+
       setNewCumple({ nombre: '', dia: '01', mes: '01', parentesco: 'Hermano', santo: '' });
       setShowCumpleModal(false);
       setIsEditingCumple(false);
       setEditingCumpleId(null);
-      triggerToast('🎉 Cumpleaños guardado correctamente.');
+      triggerToast('🎉 Cumpleaños y santo guardados.');
     }
   };
 
@@ -3323,12 +3420,23 @@ export default function App() {
         dia = parts[1] || '01';
       }
     }
+    const normC = (cumple.nombre || '').toLowerCase().trim();
+    const baseNormC = normC.split('(')[0].trim();
+    const integrante = integrantes.find(i => {
+      const normI = (i.nombre || '').toLowerCase().trim();
+      const baseNormI = normI.split('(')[0].trim();
+      return normI === normC || (baseNormC && baseNormI === baseNormC);
+    });
+    const santoInit = (cumple.santo && !cumple.santo.toLowerCase().includes('no especificado') && cumple.santo !== 'No registrado')
+      ? cumple.santo
+      : (integrante && integrante.santo && !integrante.santo.toLowerCase().includes('no especificado') && integrante.santo !== 'No registrado' ? integrante.santo : '');
+
     setNewCumple({
       nombre: cumple.nombre || '',
       dia: dia.padStart(2, '0'),
       mes: mes.padStart(2, '0'),
       parentesco: cumple.parentesco || 'Hermano',
-      santo: cumple.santo || ''
+      santo: santoInit
     });
     setEditingCumpleId(cumple.id);
     setIsEditingCumple(true);
