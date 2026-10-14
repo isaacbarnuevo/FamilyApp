@@ -1198,6 +1198,7 @@ export default function App() {
   const [fotosAlbum, setFotosAlbum] = useState(() => getInitialState('albumFotos', ALBUM_FOTOS_PREDEFINIDAS));
   const [filtroAlbum, setFiltroAlbum] = useState('todos');
   const [showSubirFotoModal, setShowSubirFotoModal] = useState(false);
+  const [fotoAEditar, setFotoAEditar] = useState(null);
   const [fotoSeleccionadaLightbox, setFotoSeleccionadaLightbox] = useState(null);
   const [nuevoComentarioTexto, setNuevoComentarioTexto] = useState({});
   const [nuevaFoto, setNuevaFoto] = useState({
@@ -2073,11 +2074,16 @@ export default function App() {
           }
         }
 
-        const snapAlbum = await getDocs(colAlbumFotos);
-        if (snapAlbum.empty) {
-          for (const foto of ALBUM_FOTOS_PREDEFINIDAS) {
-            await addDoc(colAlbumFotos, foto);
+        const configAlbumRef = doc(db, 'artifacts', appId, 'public', 'config_album_fotos');
+        const snapConfigAlbum = await getDoc(configAlbumRef);
+        if (!snapConfigAlbum.exists()) {
+          const snapAlbum = await getDocs(colAlbumFotos);
+          if (snapAlbum.empty) {
+            for (const foto of ALBUM_FOTOS_PREDEFINIDAS) {
+              await addDoc(colAlbumFotos, foto);
+            }
           }
+          await setDoc(configAlbumRef, { inicializado: true, fecha: new Date().toISOString() }, { merge: true });
         }
       } catch (err) {
         console.error("Error sembrando datos:", err);
@@ -2198,10 +2204,12 @@ export default function App() {
     });
 
     const unsubAlbum = onSnapshot(colAlbumFotos, (snapshot) => {
-      setFotosAlbum(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
+      const items = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
+      setFotosAlbum(items);
+      persistLocal('albumFotos', items);
     }, (err) => {
       console.error("Error al suscribirse a albumFotos:", err);
-      setFotosAlbum(getInitialState('albumFotos', ALBUM_FOTOS_PREDEFINIDAS));
+      setFotosAlbum(getInitialState('albumFotos', []));
     });
 
     return () => {
@@ -4051,7 +4059,7 @@ export default function App() {
   };
 
   // --- GESTIÓN ÁLBUM DE RECUERDOS (FASE 5) ---
-  const handleFotoArchivoSeleccionada = (e) => {
+  const handleFotoArchivoSeleccionada = (e, esParaEdicion = false) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -4060,19 +4068,19 @@ export default function App() {
       const img = new window.Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 1200;
-        const MAX_HEIGHT = 1200;
+        const MAX_WIDTH = 800;
+        const MAX_HEIGHT = 800;
         let width = img.width;
         let height = img.height;
 
         if (width > height) {
           if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
+            height = Math.round(height * (MAX_WIDTH / width));
             width = MAX_WIDTH;
           }
         } else {
           if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
+            width = Math.round(width * (MAX_HEIGHT / height));
             height = MAX_HEIGHT;
           }
         }
@@ -4080,8 +4088,28 @@ export default function App() {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
-        setNuevaFoto(prev => ({ ...prev, imagenUrl: dataUrl }));
+
+        let quality = 0.72;
+        let dataUrl = canvas.toDataURL('image/jpeg', quality);
+
+        // Si el tamaño supera los 400KB de texto base64, comprimir un poco más para máxima ligereza en Firestore
+        if (dataUrl.length > 400000) {
+          dataUrl = canvas.toDataURL('image/jpeg', 0.55);
+        }
+        if (dataUrl.length > 400000) {
+          const c2 = document.createElement('canvas');
+          c2.width = Math.round(width * 0.7);
+          c2.height = Math.round(height * 0.7);
+          const ctx2 = c2.getContext('2d');
+          ctx2.drawImage(canvas, 0, 0, c2.width, c2.height);
+          dataUrl = c2.toDataURL('image/jpeg', 0.50);
+        }
+
+        if (esParaEdicion) {
+          setFotoAEditar(prev => prev ? ({ ...prev, imagenUrl: dataUrl }) : null);
+        } else {
+          setNuevaFoto(prev => ({ ...prev, imagenUrl: dataUrl }));
+        }
       };
       img.src = event.target.result;
     };
@@ -4094,7 +4122,7 @@ export default function App() {
       alert("Por favor selecciona o sube una fotografía.");
       return;
     }
-    const autorNombre = matchedMember?.nombre || usuarioActivo || 'Familiar';
+    const autorNombre = nuevaFoto.autor || matchedMember?.nombre || usuarioActivo || 'Familiar';
     const fotoObj = {
       titulo: nuevaFoto.titulo || 'Momento Familiar',
       lugar: nuevaFoto.lugar || 'Familiar',
@@ -4110,7 +4138,11 @@ export default function App() {
 
     if (isCloudMode && user && !isLocalMode) {
       try {
-        await addDoc(colAlbumFotos, fotoObj);
+        const colFotos = collection(db, 'artifacts', appId, 'public', 'data', 'albumFotos');
+        const docAgregado = await addDoc(colFotos, fotoObj);
+        const fotoConId = { id: docAgregado.id, ...fotoObj };
+        setFotosAlbum(prev => [fotoConId, ...prev.filter(f => f.id !== docAgregado.id)]);
+        persistLocal('albumFotos', [fotoConId, ...fotosAlbum]);
         triggerToast('📸 ¡Foto añadida al álbum familiar con éxito!');
       } catch (err) {
         console.error("Error guardando foto en Firestore:", err);
@@ -4138,6 +4170,74 @@ export default function App() {
     setShowSubirFotoModal(false);
   };
 
+  const handleAbrirEditarFoto = (foto) => {
+    setFotoAEditar({
+      id: foto.id,
+      titulo: foto.titulo || '',
+      lugar: foto.lugar || '',
+      fecha: foto.fecha || new Date().toISOString().split('T')[0],
+      categoria: foto.categoria || 'barbacoas',
+      autor: foto.autor || matchedMember?.nombre || usuarioActivo || 'Familiar',
+      descripcion: foto.descripcion || '',
+      imagenUrl: foto.imagenUrl || ''
+    });
+  };
+
+  const handleGuardarEdicionFoto = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!fotoAEditar) return;
+    const fotoId = fotoAEditar.id;
+
+    const datosActualizados = {
+      titulo: fotoAEditar.titulo || 'Momento Familiar',
+      lugar: fotoAEditar.lugar || 'Familiar',
+      fecha: fotoAEditar.fecha || new Date().toISOString().split('T')[0],
+      categoria: fotoAEditar.categoria || 'barbacoas',
+      autor: fotoAEditar.autor || 'Familiar',
+      descripcion: fotoAEditar.descripcion || '',
+      imagenUrl: fotoAEditar.imagenUrl
+    };
+
+    if (isCloudMode && user && !isLocalMode && fotoId) {
+      try {
+        const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'albumFotos');
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'albumFotos', String(fotoId));
+        let updatedInCloud = false;
+        try {
+          await updateDoc(docRef, datosActualizados);
+          updatedInCloud = true;
+        } catch {
+          // Si el ID era interno (ej: foto_1), buscar el doc real en Firestore
+          const snap = await getDocs(colRef);
+          const dReal = snap.docs.find(d => d.id === fotoId || d.data().id === fotoId);
+          if (dReal) {
+            await updateDoc(dReal.ref, datosActualizados);
+            updatedInCloud = true;
+          }
+        }
+        if (updatedInCloud) {
+          triggerToast('✅ Foto editada y sincronizada en la nube');
+        } else {
+          triggerToast('📸 Foto editada localmente');
+        }
+      } catch (err) {
+        console.error("Error editando foto en Firestore:", err);
+        triggerToast('📸 Foto editada localmente');
+      }
+    } else {
+      triggerToast('📸 Foto editada localmente');
+    }
+
+    const updated = fotosAlbum.map(f => (f.id === fotoId ? { ...f, ...datosActualizados } : f));
+    setFotosAlbum(updated);
+    persistLocal('albumFotos', updated);
+
+    if (fotoSeleccionadaLightbox?.id === fotoId) {
+      setFotoSeleccionadaLightbox(prev => ({ ...prev, ...datosActualizados }));
+    }
+    setFotoAEditar(null);
+  };
+
   const handleToggleLikeFoto = async (fotoId) => {
     const yo = matchedMember?.nombre || usuarioActivo || 'Familiar';
     const foto = fotosAlbum.find(f => f.id === fotoId);
@@ -4146,10 +4246,17 @@ export default function App() {
     const yaDioLike = currentLikes.includes(yo);
     const updatedLikes = yaDioLike ? currentLikes.filter(nom => nom !== yo) : [...currentLikes, yo];
 
-    if (isCloudMode && user && !isLocalMode && typeof fotoId === 'string' && !fotoId.startsWith('foto_') && !fotoId.startsWith('f_')) {
+    if (isCloudMode && user && !isLocalMode && fotoId) {
       try {
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'albumFotos', fotoId);
-        await updateDoc(docRef, { likes: updatedLikes });
+        const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'albumFotos');
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'albumFotos', String(fotoId));
+        try {
+          await updateDoc(docRef, { likes: updatedLikes });
+        } catch {
+          const snap = await getDocs(colRef);
+          const dReal = snap.docs.find(d => d.id === fotoId || d.data().id === fotoId);
+          if (dReal) await updateDoc(dReal.ref, { likes: updatedLikes });
+        }
       } catch (err) {
         console.error("Error actualizando like:", err);
       }
@@ -4174,10 +4281,17 @@ export default function App() {
     };
     const updatedComentarios = [...(foto.comentarios || []), nuevoComent];
 
-    if (isCloudMode && user && !isLocalMode && typeof fotoId === 'string' && !fotoId.startsWith('foto_') && !fotoId.startsWith('f_')) {
+    if (isCloudMode && user && !isLocalMode && fotoId) {
       try {
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'albumFotos', fotoId);
-        await updateDoc(docRef, { comentarios: updatedComentarios });
+        const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'albumFotos');
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'albumFotos', String(fotoId));
+        try {
+          await updateDoc(docRef, { comentarios: updatedComentarios });
+        } catch {
+          const snap = await getDocs(colRef);
+          const dReal = snap.docs.find(d => d.id === fotoId || d.data().id === fotoId);
+          if (dReal) await updateDoc(dReal.ref, { comentarios: updatedComentarios });
+        }
       } catch (err) {
         console.error("Error guardando comentario:", err);
       }
@@ -4213,18 +4327,25 @@ export default function App() {
 
   const handleDeleteFoto = async (fotoId) => {
     if (!confirm("¿Seguro que deseas eliminar esta foto del álbum familiar?")) return;
-    if (isCloudMode && user && !isLocalMode && typeof fotoId === 'string' && !fotoId.startsWith('foto_') && !fotoId.startsWith('f_')) {
+    if (isCloudMode && user && !isLocalMode && fotoId) {
       try {
-        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'albumFotos', fotoId));
-        triggerToast('🗑 Foto eliminada de la nube');
+        const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'albumFotos');
+        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'albumFotos', String(fotoId))).catch(() => {});
+        const snap = await getDocs(colRef);
+        const docsABorrar = snap.docs.filter(d => d.id === fotoId || d.data().id === fotoId);
+        for (const d of docsABorrar) {
+          await deleteDoc(d.ref).catch(() => {});
+        }
+        triggerToast('🗑 Foto eliminada con éxito');
       } catch (err) {
         console.error("Error eliminando foto:", err);
       }
     }
-    const updated = fotosAlbum.filter(f => f.id !== fotoId);
+    const updated = fotosAlbum.filter(f => f.id !== fotoId && f.id !== String(fotoId));
     setFotosAlbum(updated);
     persistLocal('albumFotos', updated);
     if (fotoSeleccionadaLightbox?.id === fotoId) setFotoSeleccionadaLightbox(null);
+    if (fotoAEditar?.id === fotoId) setFotoAEditar(null);
   };
 
   const handleEnviarResumenManualTelegram = async () => {
@@ -10722,13 +10843,22 @@ export default function App() {
                                   <div>
                                     <div className="flex items-start justify-between gap-2">
                                       <h3 className="font-bold text-slate-900 text-sm">{foto.titulo}</h3>
-                                      <button
-                                        onClick={() => handleDeleteFoto(foto.id)}
-                                        className="text-slate-300 hover:text-rose-500 p-1 rounded-lg transition"
-                                        title="Eliminar foto"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        <button
+                                          onClick={() => handleAbrirEditarFoto(foto)}
+                                          className="text-slate-300 hover:text-purple-600 hover:bg-purple-50 p-1 rounded-lg transition"
+                                          title="Editar foto"
+                                        >
+                                          <Edit2 className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                          onClick={() => handleDeleteFoto(foto.id)}
+                                          className="text-slate-300 hover:text-rose-500 hover:bg-rose-50 p-1 rounded-lg transition"
+                                          title="Eliminar foto"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
                                     </div>
                                     <div className="text-[10px] text-slate-400 mt-0.5">
                                       📅 {formatearFechaStr(foto.fecha)} • Por <span className="font-bold text-slate-600">{foto.autor || 'Familiar'}</span>
@@ -12677,6 +12807,141 @@ export default function App() {
             </div>
           )}
 
+          {/* Modal para Editar Foto del Álbum */}
+          {fotoAEditar && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-fadeIn overflow-y-auto">
+              <div className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-slate-100 my-4">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="p-2 bg-purple-100 text-purple-600 rounded-2xl text-lg">✏️</span>
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-base">Editar Foto Familiar</h3>
+                      <p className="text-[10px] text-slate-400">
+                        Modifica los detalles, fecha, lugar o reemplaza la fotografía
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setFotoAEditar(null)}
+                    className="text-slate-400 hover:text-slate-600 font-bold p-1 text-base transition"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <form onSubmit={handleGuardarEdicionFoto} className="space-y-3.5 text-xs">
+                  {/* Selector / Cámara para cambiar foto */}
+                  <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-2xl border border-purple-150 text-center space-y-2">
+                    {fotoAEditar.imagenUrl ? (
+                      <div className="relative aspect-video rounded-xl overflow-hidden border border-purple-200 shadow-xs">
+                        <img src={fotoAEditar.imagenUrl} alt="Vista previa" className="w-full h-full object-cover" />
+                        <label className="absolute bottom-2 right-2 bg-purple-600/90 hover:bg-purple-700 text-white font-bold text-[10px] px-3 py-1.5 rounded-xl cursor-pointer shadow-md transition flex items-center gap-1">
+                          <Camera className="w-3 h-3" /> Cambiar Imagen
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFotoArchivoSeleccionada(e, true)} />
+                        </label>
+                      </div>
+                    ) : (
+                      <label className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-purple-300 rounded-2xl cursor-pointer hover:bg-white/60 transition">
+                        <Camera className="w-8 h-8 text-purple-500 mb-1" />
+                        <span className="font-bold text-purple-900 text-xs">Elegir fotografía</span>
+                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFotoArchivoSeleccionada(e, true)} />
+                      </label>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Título o Momento *</label>
+                    <input
+                      type="text"
+                      value={fotoAEditar.titulo}
+                      onChange={(e) => setFotoAEditar(prev => ({ ...prev, titulo: e.target.value }))}
+                      required
+                      className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Lugar</label>
+                      <input
+                        type="text"
+                        value={fotoAEditar.lugar}
+                        onChange={(e) => setFotoAEditar(prev => ({ ...prev, lugar: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Fecha</label>
+                      <input
+                        type="date"
+                        value={fotoAEditar.fecha}
+                        onChange={(e) => setFotoAEditar(prev => ({ ...prev, fecha: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Categoría</label>
+                      <select
+                        value={fotoAEditar.categoria}
+                        onChange={(e) => setFotoAEditar(prev => ({ ...prev, categoria: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 font-bold"
+                      >
+                        <option value="barbacoas">🍖 Barbacoas & Quedadas</option>
+                        <option value="vacaciones">🌴 Vacaciones Verano</option>
+                        <option value="cumples">🎂 Cumpleaños & Santos</option>
+                        <option value="recuerdos">🕰️ Recuerdos Familiares</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">¿Quién la subió?</label>
+                      <select
+                        value={fotoAEditar.autor || matchedMember?.nombre || usuarioActivo}
+                        onChange={(e) => setFotoAEditar(prev => ({ ...prev, autor: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 font-bold"
+                      >
+                        {integrantes.map(i => (
+                          <option key={i.id || i.nombre} value={i.nombre}>
+                            👤 {i.nombre}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Comentario o Anécdota</label>
+                    <textarea
+                      rows="2"
+                      value={fotoAEditar.descripcion}
+                      onChange={(e) => setFotoAEditar(prev => ({ ...prev, descripcion: e.target.value }))}
+                      className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium leading-relaxed"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setFotoAEditar(null)}
+                      className="px-4 py-2 rounded-xl text-slate-500 hover:bg-slate-100 font-bold transition"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={!fotoAEditar.imagenUrl}
+                      className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold transition shadow-sm"
+                    >
+                      Guardar Cambios
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
           {/* Modal Lightbox para Ver Foto en Grande */}
           {fotoSeleccionadaLightbox && (
             <div
@@ -12698,7 +12963,7 @@ export default function App() {
                   alt={fotoSeleccionadaLightbox.titulo}
                   className="max-h-[75vh] w-auto object-contain rounded-2xl shadow-2xl"
                 />
-                <div className="bg-slate-900/80 backdrop-blur-md p-4 rounded-2xl text-white mt-3 w-full max-w-xl text-center space-y-1">
+                <div className="bg-slate-900/80 backdrop-blur-md p-4 rounded-2xl text-white mt-3 w-full max-w-xl text-center space-y-2">
                   <h3 className="font-bold text-base">{fotoSeleccionadaLightbox.titulo}</h3>
                   <p className="text-xs text-slate-300">
                     📍 {fotoSeleccionadaLightbox.lugar || 'Familiar'} • 📅 {formatearFechaStr(fotoSeleccionadaLightbox.fecha)} • Por {fotoSeleccionadaLightbox.autor || 'Familiar'}
@@ -12706,6 +12971,33 @@ export default function App() {
                   {fotoSeleccionadaLightbox.descripcion && (
                     <p className="text-xs text-purple-200 italic mt-1">"{fotoSeleccionadaLightbox.descripcion}"</p>
                   )}
+                  <div className="flex items-center justify-center gap-2 pt-2 border-t border-slate-700/60">
+                    <button
+                      onClick={() => {
+                        const foto = fotoSeleccionadaLightbox;
+                        setFotoSeleccionadaLightbox(null);
+                        handleAbrirEditarFoto(foto);
+                      }}
+                      className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" /> Editar
+                    </button>
+                    <button
+                      onClick={() => {
+                        const id = fotoSeleccionadaLightbox.id;
+                        handleDeleteFoto(id);
+                      }}
+                      className="bg-rose-600/80 hover:bg-rose-600 text-white text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Eliminar
+                    </button>
+                    <button
+                      onClick={() => handleCompartirFotoTelegram(fotoSeleccionadaLightbox)}
+                      className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition"
+                    >
+                      <span>✈️</span> Telegram
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
