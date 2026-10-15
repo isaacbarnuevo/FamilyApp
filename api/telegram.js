@@ -601,10 +601,14 @@ async function procesarMensajeNaturalGrupo(msg, chatId, texto, messageId) {
   }
 
   // 4. Detección de Citas Médicas (Acompañamiento, Ida / Vuelta / Por su cuenta / Autobús / Andando)
-  const tienePalabraMedica = /(?:dentista|m[eé]dico|doctor|consulta|hospital|ambulatorio|alcarria|quir[oó]n|endocrino|oculista|oftalm[oó]logo|trauma|an[aá]lisis|vacuna|gripe|pod[oó]logo|juan\s+de\s+austria|cita)/i.test(t) || /(?:cita\s+m[eé]dica|dentista|consulta|m[eé]dico)/i.test(replyText);
-  const tienePalabraTransporte = /(?:nos\s+lleva|me\s+lleva|le\s+lleva|la\s+lleva|llevo\s+yo|yo\s+llevo|yo\s+(?:le\s+|la\s+)?acerco|acompa[ñn]o\s+yo|yo\s+acompa[ñn]o|recojo\s+yo|yo\s+recojo|le\s+recoge|la\s+recoge|volveremos|volvere|volver[aá]n|volver[eé]|por\s+mis\s+medios|por\s+nuestra\s+cuenta|por\s+su\s+cuenta|autob[uú]s|andando|voy\s+sol[oa]|vamos\s+sol[oa]s|no\s+necesita\s+acompa[ñn]ante|no\s+hace\s+falta\s+que\s+(?:me|nos)\s+(?:llev[eé]is|acompa[ñn][eé]is))/i.test(t);
+  const tienePalabraMedica = /(?:dentista|m[eé]dico|doctor|consulta|hospital|ambulatorio|alcarria|quir[oó]n|endocrino|oculista|oftalm[oó]logo|trauma|an[aá]lisis|vacuna|gripe|pod[oó]logo|juan\s+de\s+austria|inyecci[oó]n|colonoscopia|pruebas|revisi[oó]n|cita)/i.test(t) || /(?:cita\s+m[eé]dica|dentista|consulta|m[eé]dico)/i.test(replyText);
+  const tienePalabraTransporte = /(?:nos\s+lleva|me\s+lleva|le\s+lleva|la\s+lleva|llevo\s+yo|yo\s+llevo|yo\s+(?:le\s+|la\s+)?acerco|acompa[ñn]o\s+yo|yo\s+acompa[ñn]o|recojo\s+yo|yo\s+recojo|le\s+recoge|la\s+recoge|me\s+recoge|nos\s+recoge|volveremos|volvere|volver[aá]n|volver[eé]|vuelta|por\s+mis\s+medios|por\s+nuestra\s+cuenta|por\s+su\s+cuenta|autob[uú]s|andando|voy\s+sol[oa]|vamos\s+sol[oa]s|no\s+necesita\s+acompa[ñn]ante|no\s+hace\s+falta\s+que\s+(?:me|nos)\s+(?:llev[eé]is|acompa[ñn][eé]is)|lleva\s+[a-záéíóúñ]+|acompa[ñn]a\s+[a-záéíóúñ]+|recoge\s+[a-záéíóúñ]+)/i.test(t);
 
   const hoyIso = getFechaHoySpain();
+  const [hAno, hMes, hDia] = hoyIso.split('-').map(Number);
+  const dManana = new Date(hAno, hMes - 1, hDia + 1);
+  const mananaIso = `${dManana.getFullYear()}-${String(dManana.getMonth() + 1).padStart(2, '0')}-${String(dManana.getDate()).padStart(2, '0')}`;
+
   const snapCitas = await getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'citasMedicas'));
   const citasPendientes = snapCitas.docs
     .map(d => ({ ...d.data(), id: d.id }))
@@ -623,50 +627,120 @@ async function procesarMensajeNaturalGrupo(msg, chatId, texto, messageId) {
     const integrantes = snapMiembros.docs.map(d => ({ ...d.data(), id: d.id }));
     const autor = obtenerAutorFamiliar(msg.from, integrantes);
 
+    // Sistema de puntuación para seleccionar con máxima precisión la cita de la que se habla
     let citaTarget = null;
+    let mejorPuntuacion = -1;
+
     for (const c of citasPendientes) {
+      let score = 0;
       const esp = (c.especialidad || '').toLowerCase().trim();
       const centro = (c.centro || '').toLowerCase().trim();
-      if ((esp && (t.includes(esp) || replyText.includes(esp))) || (centro && (t.includes(centro) || replyText.includes(centro)))) {
+      const pac = (c.paciente || '').toLowerCase().trim();
+      const horaNorm = (c.hora || '').replace(':', '.');
+
+      if (esp && (t.includes(esp) || replyText.includes(esp))) score += 15;
+      if (centro && (t.includes(centro) || replyText.includes(centro))) score += 8;
+
+      if (t.includes('mañana') && c.fecha === mananaIso) score += 10;
+      if (t.includes('hoy') && c.fecha === hoyIso) score += 10;
+
+      if (c.hora && (t.includes(c.hora) || t.includes(horaNorm))) score += 8;
+
+      if (pac.includes('mamá') && /(?:mam[aá]|la\s+lleva|me\s+lleva)/i.test(t)) score += 2;
+      if (pac.includes('papá') && /(?:pap[aá]|le\s+lleva|lo\s+lleva)/i.test(t)) score += 2;
+
+      if (!c.quienLleva || c.quienLleva === 'Pendiente de asignar') score += 1;
+
+      if (score > mejorPuntuacion && score > 0) {
+        mejorPuntuacion = score;
         citaTarget = c;
-        break;
       }
     }
 
     if (!citaTarget) {
-      citaTarget = citasPendientes.find(c => c.fecha === hoyIso && (!c.quienLleva || c.quienLleva === 'Pendiente de asignar' || !c.quienRecoge || c.quienRecoge === 'Pendiente de asignar'));
-    }
-
-    if (!citaTarget) {
-      citaTarget = citasPendientes.find(c => c.fecha === hoyIso) || citasPendientes[0];
+      citaTarget = citasPendientes.find(c => c.fecha === hoyIso && (!c.quienLleva || c.quienLleva === 'Pendiente de asignar'))
+        || citasPendientes.find(c => c.fecha === mananaIso && (!c.quienLleva || c.quienLleva === 'Pendiente de asignar'))
+        || citasPendientes.find(c => c.fecha === hoyIso)
+        || citasPendientes.find(c => c.fecha === mananaIso)
+        || citasPendientes[0];
     }
 
     if (citaTarget) {
       const esPorSusMedios = /(?:por\s+(?:mis|nuestros?|sus)\s+medios|por\s+(?:mi|nuestra|su)\s+cuenta|autob[uú]s|andando|voy\s+sol[oa]|vamos\s+sol[oa]s|no\s+necesita\s+acompa[ñn]ante|no\s+hace\s+falta\s+que\s+(?:me|nos)\s+(?:llev[eé]is|acompa[ñn][eé]is))/i.test(t);
-
-      const matchLlevaTercero = texto.match(/(?:nos|me|le|la)\s+lleva\s+([a-záéíóúñ\s]+?)(?:\s+y\s+|\s*,\s*|\s*\.|$)/i);
-      const matchLlevaYo = /(?:llevo\s+yo|yo\s+llevo|yo\s+(?:le\s+|la\s+)?acerco|acompa[ñn]o\s+yo|yo\s+acompa[ñn]o|me\s+encargo\s+de\s+llevar)/i.test(t);
-      const matchRecogeTercero = texto.match(/(?:(?:le|la)\s+)?recoge\s+([a-záéíóúñ\s]+?)(?:\s+y\s+|\s*,\s*|\s*\.|$)/i);
-      const matchRecogeYo = /(?:recojo\s+yo|yo\s+recojo|yo\s+(?:la|le)\s+recojo)/i.test(t);
-      const matchVueltaPorCuenta = /(?:volveremos|volvere|volver[aá]n|volver[eé]|vuelta|regreso)\s+(?:por\s+(?:nuestra|su|mi)\s+cuenta|sol[oa]s?|andando|en\s+autob[uú]s)/i.test(t);
+      const vueltaPorCuenta = /(?:vuelta|regreso|volver[aá]n?|volver[eé])\s+(?:.*?\s+)?(?:por\s+(?:nuestra|su|mi)\s+cuenta|sol[oa]s?|andando|en\s+autob[uú]s)/i.test(t);
 
       let quienLleva = null;
       let quienRecoge = null;
       let noNecesitaAcompanante = false;
 
-      if (matchLlevaTercero) {
-        quienLleva = normalizarNombreFamiliar(matchLlevaTercero[1], integrantes, autor);
-      } else if (matchLlevaYo) {
-        quienLleva = autor;
+      // 1. Extraer familiares mencionados
+      const familiares = [];
+      if (/(?:llevo\s+yo|yo\s+llevo|recojo\s+yo|yo\s+recojo|acompa[ñn]o\s+yo|yo\s+acompa[ñn]o|yo\s+(?:le\s+|la\s+)?acerco|me\s+encargo\s+yo|yo\s+me\s+encargo)/i.test(t)) {
+        familiares.push({ nombre: autor, pos: t.search(/\byo\b|\bllevo\b|\bacompa[ñn]o\b/) });
       }
 
-      if (matchVueltaPorCuenta) {
+      // Excluir nombres de centros médicos (ej: 'Juan de Austria') para no confundirlos con personas
+      const tSinCentros = t.replace(/juan\s+de\s+austria/gi, '                 ');
+
+      const aliasFamiliares = [
+        { regex: /\b(mariuge)\b/i, nombre: 'Tía Mariuge' },
+        { regex: /\b(rebe(?:ca)?)\b/i, nombre: 'Rebeca' },
+        { regex: /\b(isaac|isik)\b/i, nombre: 'Isaac' },
+        { regex: /\b(moni(?:ca)?)\b/i, nombre: 'Mónica' },
+        { regex: /\b(bartek)\b/i, nombre: 'Bartek' },
+        { regex: /\b(juan)\b/i, nombre: 'Juan' },
+        { regex: /\b(javi(?:er)?)\b/i, nombre: 'Javier' },
+        { regex: /\b(cris(?:tina)?)\b/i, nombre: 'Cristina' },
+        { regex: /\b(tere(?:sa)?)\b/i, nombre: 'Teresa' },
+        { regex: /\b(jorge)\b/i, nombre: 'Jorge' },
+        { regex: /\b(carlos)\b/i, nombre: 'Carlos' },
+        { regex: /\b(sof[ií]a)\b/i, nombre: 'Sofía' },
+        { regex: /\b(mar[ií]a)\b/i, nombre: 'María' }
+      ];
+
+      for (const af of aliasFamiliares) {
+        const m = tSinCentros.match(af.regex);
+        if (m) {
+          familiares.push({ nombre: af.nombre, pos: m.index });
+        }
+      }
+
+      for (const inte of integrantes) {
+        if (['Papá (Jaime)', 'Mamá (Encarnación)'].includes(inte.nombre)) continue;
+        const iname = (inte.nombre || '').toLowerCase();
+        if (iname && tSinCentros.includes(iname) && !familiares.some(f => f.nombre === inte.nombre)) {
+          familiares.push({ nombre: inte.nombre, pos: tSinCentros.indexOf(iname) });
+        }
+      }
+
+      familiares.sort((a, b) => a.pos - b.pos);
+
+      // Ver si hay mención explícita a recogida
+      const posRecoge = t.search(/\brecog/);
+      if (posRecoge !== -1 && familiares.length > 0) {
+        const antesRecoge = familiares.filter(f => f.pos < posRecoge);
+        const despuesRecoge = familiares.filter(f => f.pos >= posRecoge);
+        if (antesRecoge.length > 0) quienLleva = antesRecoge[0].nombre;
+        if (despuesRecoge.length > 0) quienRecoge = despuesRecoge[0].nombre;
+      } else if (familiares.length === 1) {
+        quienLleva = familiares[0].nombre;
+        quienRecoge = familiares[0].nombre;
+      } else if (familiares.length >= 2) {
+        quienLleva = familiares[0].nombre;
+        quienRecoge = familiares[1].nombre;
+      }
+
+      // Fallback regex por si se menciona un nombre no catalogado
+      if (!quienLleva && !esPorSusMedios) {
+        const matchLlevaTercero = texto.match(/(?:nos|me|le|la)?\s*(?:lleva|acerca|acompa[ñn]a)\s+([a-záéíóúñ]+)/i);
+        if (matchLlevaTercero) {
+          quienLleva = normalizarNombreFamiliar(matchLlevaTercero[1], integrantes, autor);
+        }
+      }
+
+      if (vueltaPorCuenta) {
         quienRecoge = 'Por su cuenta';
-      } else if (matchRecogeTercero) {
-        quienRecoge = normalizarNombreFamiliar(matchRecogeTercero[1], integrantes, autor);
-      } else if (matchRecogeYo) {
-        quienRecoge = autor;
-      } else if (quienLleva && !esPorSusMedios) {
+      } else if (quienLleva && !quienRecoge && !esPorSusMedios) {
         quienRecoge = quienLleva;
       }
 
