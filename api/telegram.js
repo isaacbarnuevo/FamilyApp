@@ -602,7 +602,7 @@ async function procesarMensajeNaturalGrupo(msg, chatId, texto, messageId) {
 
   // 4. Detección de Citas Médicas (Acompañamiento, Ida / Vuelta / Por su cuenta / Autobús / Andando)
   const tienePalabraMedica = /(?:dentista|m[eé]dico|doctor|consulta|hospital|ambulatorio|alcarria|quir[oó]n|endocrino|oculista|oftalm[oó]logo|trauma|an[aá]lisis|vacuna|gripe|pod[oó]logo|juan\s+de\s+austria|inyecci[oó]n|colonoscopia|pruebas|revisi[oó]n|cita)/i.test(t) || /(?:cita\s+m[eé]dica|dentista|consulta|m[eé]dico)/i.test(replyText);
-  const tienePalabraTransporte = /(?:nos\s+lleva|me\s+lleva|le\s+lleva|la\s+lleva|llevo\s+yo|yo\s+llevo|yo\s+(?:le\s+|la\s+)?acerco|acompa[ñn]o\s+yo|yo\s+acompa[ñn]o|recojo\s+yo|yo\s+recojo|le\s+recoge|la\s+recoge|me\s+recoge|nos\s+recoge|volveremos|volvere|volver[aá]n|volver[eé]|vuelta|por\s+mis\s+medios|por\s+nuestra\s+cuenta|por\s+su\s+cuenta|autob[uú]s|andando|voy\s+sol[oa]|vamos\s+sol[oa]s|no\s+necesita\s+acompa[ñn]ante|no\s+hace\s+falta\s+que\s+(?:me|nos)\s+(?:llev[eé]is|acompa[ñn][eé]is)|lleva\s+[a-záéíóúñ]+|acompa[ñn]a\s+[a-záéíóúñ]+|recoge\s+[a-záéíóúñ]+)/i.test(t);
+  const tienePalabraTransporte = /(?:nos\s+lleva|me\s+lleva|le\s+lleva|la\s+lleva|llevo\s+yo|yo\s+llevo|nos\s+trae|me\s+trae|le\s+trae|la\s+trae|traigo\s+yo|yo\s+traigo|yo\s+(?:le\s+|la\s+)?acerco|acompa[ñn]o\s+yo|yo\s+acompa[ñn]o|recojo\s+yo|yo\s+recojo|le\s+recoge|la\s+recoge|me\s+recoge|nos\s+recoge|volveremos|volvere|volver[aá]n|volver[eé]|vuelta|por\s+mis\s+medios|por\s+nuestra\s+cuenta|por\s+su\s+cuenta|autob[uú]s|andando|voy\s+sol[oa]|vamos\s+sol[oa]s|no\s+necesita\s+acompa[ñn]ante|no\s+hace\s+falta\s+que\s+(?:me|nos)\s+(?:llev[eé]is|acompa[ñn][eé]is)|lleva\s+[a-záéíóúñ]+|acompa[ñn]a\s+[a-záéíóúñ]+|recoge\s+[a-záéíóúñ]+|trae\s+[a-záéíóúñ]+)/i.test(t);
 
   const hoyIso = getFechaHoySpain();
   const [hAno, hMes, hDia] = hoyIso.split('-').map(Number);
@@ -699,8 +699,8 @@ async function procesarMensajeNaturalGrupo(msg, chatId, texto, messageId) {
       // 1. Extraer familiares mencionados usando límites estrictos de palabra en español
       // (evitando que 'mañana' coincida con 'ana')
       const familiares = [];
-      if (/(?:llevo\s+yo|yo\s+llevo|recojo\s+yo|yo\s+recojo|acompa[ñn]o\s+yo|yo\s+acompa[ñn]o|yo\s+(?:le\s+|la\s+)?acerco|me\s+encargo\s+yo|yo\s+me\s+encargo)/i.test(subT)) {
-        familiares.push({ nombre: autor, pos: subT.search(/\byo\b|\bllevo\b|\bacompa[ñn]o\b/) });
+      if (/(?:llevo\s+yo|yo\s+llevo|recojo\s+yo|yo\s+recojo|traigo\s+yo|yo\s+la\s+traigo|yo\s+le\s+traigo|acompa[ñn]o\s+yo|yo\s+acompa[ñn]o|yo\s+(?:le\s+|la\s+)?acerco|me\s+encargo\s+yo|yo\s+me\s+encargo)/i.test(subT)) {
+        familiares.push({ nombre: autor, pos: subT.search(/\byo\b|\bllevo\b|\bacompa[ñn]o\b|\btraigo\b|\brecojo\b/) });
       }
 
       // Quitar 'juan de austria' para no confundir el centro de salud con Juan
@@ -764,8 +764,8 @@ async function procesarMensajeNaturalGrupo(msg, chatId, texto, messageId) {
 
       familiares.sort((a, b) => a.pos - b.pos);
 
-      // Ver si hay mención explícita a recogida
-      const posRecoge = subT.search(/\brecog/);
+      // Ver si hay mención explícita a recogida o traer de vuelta
+      const posRecoge = subT.search(/\b(?:recog|trae|traer|vuelta|regreso)\b/);
       if (posRecoge !== -1 && familiares.length > 0) {
         const antesRecoge = familiares.filter(f => f.pos < posRecoge);
         const despuesRecoge = familiares.filter(f => f.pos >= posRecoge);
@@ -781,7 +781,7 @@ async function procesarMensajeNaturalGrupo(msg, chatId, texto, messageId) {
 
       // Fallback regex por si se menciona un nombre no catalogado
       if (!quienLleva && !esPorSusMedios) {
-        const matchLlevaTercero = subTexto.match(/(?:nos|me|le|la)?\s*(?:lleva|acerca|acompa[ñn]a)\s+([a-záéíóúñ]+)/i);
+        const matchLlevaTercero = subTexto.match(/(?:nos|me|le|la)?\s*(?:lleva|acerca|acompa[ñn]a|trae|recoge)\s+([a-záéíóúñ]+)/i);
         if (matchLlevaTercero) {
           quienLleva = normalizarNombreFamiliar(matchLlevaTercero[1], integrantes, autor);
         }
