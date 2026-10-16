@@ -627,96 +627,145 @@ async function procesarMensajeNaturalGrupo(msg, chatId, texto, messageId) {
     const integrantes = snapMiembros.docs.map(d => ({ ...d.data(), id: d.id }));
     const autor = obtenerAutorFamiliar(msg.from, integrantes);
 
-    // Sistema de puntuación para seleccionar con máxima precisión la cita de la que se habla
-    let citaTarget = null;
-    let mejorPuntuacion = -1;
+    // Separar posibles cláusulas compuestas si se habla de varias citas en el mismo mensaje
+    // (Ej: "Esta mañana nos lleva Carmen a la vacuna y por la tarde nos acerca Juan al endocrino")
+    const subMensajes = texto.split(/(?:\s+y\s+(?=por\s+la\s+(?:tarde|mañana|noche)|luego\b|despu[eé]s\b|a\s+las?\s+\d))/i);
 
-    for (const c of citasPendientes) {
-      let score = 0;
-      const esp = (c.especialidad || '').toLowerCase().trim();
-      const centro = (c.centro || '').toLowerCase().trim();
-      const pac = (c.paciente || '').toLowerCase().trim();
-      const horaNorm = (c.hora || '').replace(':', '.');
+    const citasActualizadas = [];
+    const citasYaAsignadasIds = new Set();
 
-      if (esp && (t.includes(esp) || replyText.includes(esp))) score += 15;
-      if (centro && (t.includes(centro) || replyText.includes(centro))) score += 8;
+    for (const subTexto of subMensajes) {
+      const subT = subTexto.toLowerCase();
 
-      if (t.includes('mañana') && c.fecha === mananaIso) score += 10;
-      if (t.includes('hoy') && c.fecha === hoyIso) score += 10;
+      // Puntuación de citas para esta cláusula
+      let citaTarget = null;
+      let mejorPuntuacion = -1;
 
-      if (c.hora && (t.includes(c.hora) || t.includes(horaNorm))) score += 8;
+      for (const c of citasPendientes) {
+        if (citasYaAsignadasIds.has(c.id)) continue;
+        let score = 0;
+        const esp = (c.especialidad || '').toLowerCase().trim();
+        const centro = (c.centro || '').toLowerCase().trim();
+        const pac = (c.paciente || '').toLowerCase().trim();
+        const hora = c.hora || '';
+        const horaNorm = hora.replace(':', '.');
 
-      if (pac.includes('mamá') && /(?:mam[aá]|la\s+lleva|me\s+lleva)/i.test(t)) score += 2;
-      if (pac.includes('papá') && /(?:pap[aá]|le\s+lleva|lo\s+lleva)/i.test(t)) score += 2;
+        if (esp && (subT.includes(esp) || replyText.includes(esp))) score += 15;
+        if (centro && (subT.includes(centro) || replyText.includes(centro))) score += 8;
 
-      if (!c.quienLleva || c.quienLleva === 'Pendiente de asignar') score += 1;
+        // Si mencionan 'vacuna', asociar con centros o citas de vacunas / Juan de Austria / inyecciones
+        if (subT.includes('vacuna') && (esp.includes('vacuna') || esp.includes('juan de austria') || centro.includes('juan de austria') || esp.includes('inyecci'))) {
+          score += 14;
+        }
 
-      if (score > mejorPuntuacion && score > 0) {
-        mejorPuntuacion = score;
-        citaTarget = c;
+        if (hora) {
+          const horaNum = parseInt(hora.split(':')[0], 10);
+          if (horaNum < 14 && /(?:esta\s+mañana|por\s+la\s+mañana)/i.test(subT)) score += 8;
+          if (horaNum >= 14 && /(?:esta\s+tarde|por\s+la\s+tarde)/i.test(subT)) score += 8;
+          if (subT.includes(hora) || subT.includes(horaNorm)) score += 8;
+        }
+
+        if (subT.includes('mañana') && c.fecha === mananaIso && !/(?:esta\s+mañana|por\s+la\s+mañana)/i.test(subT)) score += 10;
+        if (c.fecha === hoyIso && (subT.includes('hoy') || /(?:esta\s+mañana|esta\s+tarde)/i.test(subT))) score += 6;
+
+        if (pac.includes('mamá') && /(?:mam[aá]|la\s+lleva|me\s+lleva|nos\s+lleva)/i.test(subT)) score += 2;
+        if (pac.includes('papá') && /(?:pap[aá]|le\s+lleva|lo\s+lleva|nos\s+lleva)/i.test(subT)) score += 2;
+
+        if (!c.quienLleva || c.quienLleva === 'Pendiente de asignar') score += 1;
+
+        if (score > mejorPuntuacion && score > 0) {
+          mejorPuntuacion = score;
+          citaTarget = c;
+        }
       }
-    }
 
-    if (!citaTarget) {
-      citaTarget = citasPendientes.find(c => c.fecha === hoyIso && (!c.quienLleva || c.quienLleva === 'Pendiente de asignar'))
-        || citasPendientes.find(c => c.fecha === mananaIso && (!c.quienLleva || c.quienLleva === 'Pendiente de asignar'))
-        || citasPendientes.find(c => c.fecha === hoyIso)
-        || citasPendientes.find(c => c.fecha === mananaIso)
-        || citasPendientes[0];
-    }
+      if (!citaTarget && subMensajes.length === 1) {
+        citaTarget = citasPendientes.find(c => c.fecha === hoyIso && (!c.quienLleva || c.quienLleva === 'Pendiente de asignar'))
+          || citasPendientes.find(c => c.fecha === mananaIso && (!c.quienLleva || c.quienLleva === 'Pendiente de asignar'))
+          || citasPendientes.find(c => c.fecha === hoyIso)
+          || citasPendientes.find(c => c.fecha === mananaIso)
+          || citasPendientes[0];
+      }
 
-    if (citaTarget) {
-      const esPorSusMedios = /(?:por\s+(?:mis|nuestros?|sus)\s+medios|por\s+(?:mi|nuestra|su)\s+cuenta|autob[uú]s|andando|voy\s+sol[oa]|vamos\s+sol[oa]s|no\s+necesita\s+acompa[ñn]ante|no\s+hace\s+falta\s+que\s+(?:me|nos)\s+(?:llev[eé]is|acompa[ñn][eé]is))/i.test(t);
-      const vueltaPorCuenta = /(?:vuelta|regreso|volver[aá]n?|volver[eé])\s+(?:.*?\s+)?(?:por\s+(?:nuestra|su|mi)\s+cuenta|sol[oa]s?|andando|en\s+autob[uú]s)/i.test(t);
+      if (!citaTarget) continue;
+
+      const esPorSusMedios = /(?:por\s+(?:mis|nuestros?|sus)\s+medios|por\s+(?:mi|nuestra|su)\s+cuenta|autob[uú]s|andando|voy\s+sol[oa]|vamos\s+sol[oa]s|no\s+necesita\s+acompa[ñn]ante|no\s+hace\s+falta\s+que\s+(?:me|nos)\s+(?:llev[eé]is|acompa[ñn][eé]is))/i.test(subT);
+      const vueltaPorCuenta = /(?:vuelta|regreso|volver[aá]n?|volver[eé])\s+(?:.*?\s+)?(?:por\s+(?:nuestra|su|mi)\s+cuenta|sol[oa]s?|andando|en\s+autob[uú]s)/i.test(subT);
 
       let quienLleva = null;
       let quienRecoge = null;
       let noNecesitaAcompanante = false;
 
-      // 1. Extraer familiares mencionados
+      // 1. Extraer familiares mencionados usando límites estrictos de palabra en español
+      // (evitando que 'mañana' coincida con 'ana')
       const familiares = [];
-      if (/(?:llevo\s+yo|yo\s+llevo|recojo\s+yo|yo\s+recojo|acompa[ñn]o\s+yo|yo\s+acompa[ñn]o|yo\s+(?:le\s+|la\s+)?acerco|me\s+encargo\s+yo|yo\s+me\s+encargo)/i.test(t)) {
-        familiares.push({ nombre: autor, pos: t.search(/\byo\b|\bllevo\b|\bacompa[ñn]o\b/) });
+      if (/(?:llevo\s+yo|yo\s+llevo|recojo\s+yo|yo\s+recojo|acompa[ñn]o\s+yo|yo\s+acompa[ñn]o|yo\s+(?:le\s+|la\s+)?acerco|me\s+encargo\s+yo|yo\s+me\s+encargo)/i.test(subT)) {
+        familiares.push({ nombre: autor, pos: subT.search(/\byo\b|\bllevo\b|\bacompa[ñn]o\b/) });
       }
 
-      // Excluir nombres de centros médicos (ej: 'Juan de Austria') para no confundirlos con personas
-      const tSinCentros = t.replace(/juan\s+de\s+austria/gi, '                 ');
+      // Quitar 'juan de austria' para no confundir el centro de salud con Juan
+      const tLimpio = subT.replace(/juan\s+de\s+austria/gi, '                 ');
 
       const aliasFamiliares = [
-        { regex: /\b(mariuge)\b/i, nombre: 'Tía Mariuge' },
-        { regex: /\b(rebe(?:ca)?)\b/i, nombre: 'Rebeca' },
-        { regex: /\b(isaac|isik)\b/i, nombre: 'Isaac' },
-        { regex: /\b(moni(?:ca)?)\b/i, nombre: 'Mónica' },
-        { regex: /\b(bartek)\b/i, nombre: 'Bartek' },
-        { regex: /\b(juan)\b/i, nombre: 'Juan' },
-        { regex: /\b(javi(?:er)?)\b/i, nombre: 'Javier' },
-        { regex: /\b(cris(?:tina)?)\b/i, nombre: 'Cristina' },
-        { regex: /\b(tere(?:sa)?)\b/i, nombre: 'Teresa' },
-        { regex: /\b(jorge)\b/i, nombre: 'Jorge' },
-        { regex: /\b(carlos)\b/i, nombre: 'Carlos' },
-        { regex: /\b(sof[ií]a)\b/i, nombre: 'Sofía' },
-        { regex: /\b(mar[ií]a)\b/i, nombre: 'María' }
+        { name: 'carmen', nombre: 'Carmen' },
+        { name: 'mariuge', nombre: 'Tía Mariuge' },
+        { name: 'rebeca', nombre: 'Rebeca' },
+        { name: 'rebe', nombre: 'Rebeca' },
+        { name: 'isaac', nombre: 'Isaac' },
+        { name: 'isik', nombre: 'Isaac' },
+        { name: 'monica', nombre: 'Mónica' },
+        { name: 'mónica', nombre: 'Mónica' },
+        { name: 'moni', nombre: 'Mónica' },
+        { name: 'bartek', nombre: 'Bartek' },
+        { name: 'juan', nombre: 'Juan' },
+        { name: 'javier', nombre: 'Javier' },
+        { name: 'javi', nombre: 'Javier' },
+        { name: 'cristina', nombre: 'Cristina' },
+        { name: 'cris', nombre: 'Cristina' },
+        { name: 'teresa', nombre: 'Teresa' },
+        { name: 'tere', nombre: 'Teresa' },
+        { name: 'jorge', nombre: 'Jorge' },
+        { name: 'carlos', nombre: 'Carlos' },
+        { name: 'sofia', nombre: 'Sofía' },
+        { name: 'sofía', nombre: 'Sofía' },
+        { name: 'maría', nombre: 'María' },
+        { name: 'maria', nombre: 'María' },
+        { name: 'ana', nombre: 'Ana' },
+        { name: 'david', nombre: 'David' },
+        { name: 'elena', nombre: 'Elena' },
+        { name: 'samuel', nombre: 'Samuel' },
+        { name: 'paloma', nombre: 'Paloma' },
+        { name: 'nieves', nombre: 'Nieves' },
+        { name: 'lucyna', nombre: 'Lucyna' }
       ];
 
-      for (const af of aliasFamiliares) {
-        const m = tSinCentros.match(af.regex);
+      for (const a of aliasFamiliares) {
+        const rx = new RegExp('(?:^|[^a-záéíóúüñ])(' + a.name + ')(?:[^a-záéíóúüñ]|$)', 'i');
+        const m = tLimpio.match(rx);
         if (m) {
-          familiares.push({ nombre: af.nombre, pos: m.index });
+          const idx = tLimpio.indexOf(m[1]);
+          if (!familiares.some(f => f.nombre === a.nombre)) {
+            familiares.push({ nombre: a.nombre, pos: idx });
+          }
         }
       }
 
       for (const inte of integrantes) {
         if (['Papá (Jaime)', 'Mamá (Encarnación)'].includes(inte.nombre)) continue;
         const iname = (inte.nombre || '').toLowerCase();
-        if (iname && tSinCentros.includes(iname) && !familiares.some(f => f.nombre === inte.nombre)) {
-          familiares.push({ nombre: inte.nombre, pos: tSinCentros.indexOf(iname) });
+        if (iname) {
+          const rx = new RegExp('(?:^|[^a-záéíóúüñ])(' + iname + ')(?:[^a-záéíóúüñ]|$)', 'i');
+          const m = tLimpio.match(rx);
+          if (m && !familiares.some(f => f.nombre === inte.nombre)) {
+            familiares.push({ nombre: inte.nombre, pos: tLimpio.indexOf(m[1]) });
+          }
         }
       }
 
       familiares.sort((a, b) => a.pos - b.pos);
 
       // Ver si hay mención explícita a recogida
-      const posRecoge = t.search(/\brecog/);
+      const posRecoge = subT.search(/\brecog/);
       if (posRecoge !== -1 && familiares.length > 0) {
         const antesRecoge = familiares.filter(f => f.pos < posRecoge);
         const despuesRecoge = familiares.filter(f => f.pos >= posRecoge);
@@ -732,7 +781,7 @@ async function procesarMensajeNaturalGrupo(msg, chatId, texto, messageId) {
 
       // Fallback regex por si se menciona un nombre no catalogado
       if (!quienLleva && !esPorSusMedios) {
-        const matchLlevaTercero = texto.match(/(?:nos|me|le|la)?\s*(?:lleva|acerca|acompa[ñn]a)\s+([a-záéíóúñ]+)/i);
+        const matchLlevaTercero = subTexto.match(/(?:nos|me|le|la)?\s*(?:lleva|acerca|acompa[ñn]a)\s+([a-záéíóúñ]+)/i);
         if (matchLlevaTercero) {
           quienLleva = normalizarNombreFamiliar(matchLlevaTercero[1], integrantes, autor);
         }
@@ -750,62 +799,78 @@ async function procesarMensajeNaturalGrupo(msg, chatId, texto, messageId) {
         quienRecoge = 'No necesita acompañante';
       }
 
-      const updateData = {
-        actualizadoPor: `${autor} (Telegram)`,
-        actualizadoEl: new Date().toISOString()
-      };
-
-      if (noNecesitaAcompanante) {
-        updateData.noNecesitaAcompanante = true;
-        updateData.acompanante = 'No necesita acompañante (por sus propios medios)';
-        updateData.quienLleva = 'No necesita acompañante';
-        updateData.quienRecoge = 'No necesita acompañante';
-        updateData.mismoConductorVuelta = true;
-        updateData.notas = citaTarget.notas ? `${citaTarget.notas} | ${texto}` : texto;
-
-        await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'citasMedicas', citaTarget.id), updateData);
-        await setMessageReactionTelegram(chatId, messageId, '👍');
-        await enviarRespuestaTelegram(
-          chatId,
-          `🏥 ✅ ¡Anotado, <b>${autor}</b>!\n\n` +
-          `He actualizado en la app que <b>${citaTarget.paciente}</b> va por sus propios medios a la cita de <b>${citaTarget.especialidad.trim()}</b> (${citaTarget.hora || ''}) y que <b>no necesita acompañante</b>. 🚶`,
-          messageId
-        );
-        return { tipo: 'cita', citaId: citaTarget.id, noNecesitaAcompanante: true };
-      } else if (quienLleva || quienRecoge) {
-        const llevaFinal = quienLleva || citaTarget.quienLleva || 'Pendiente de asignar';
-        const recogeFinal = quienRecoge || citaTarget.quienRecoge || llevaFinal;
-        const mismo = llevaFinal === recogeFinal;
-
-        updateData.quienLleva = llevaFinal;
-        updateData.quienRecoge = recogeFinal;
-        updateData.mismoConductorVuelta = mismo;
-        updateData.noNecesitaAcompanante = false;
-        updateData.acompanante = mismo ? llevaFinal : `${llevaFinal} (ida) / ${recogeFinal} (vuelta)`;
-        updateData.notas = citaTarget.notas ? `${citaTarget.notas} | ${texto}` : texto;
-
-        await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'citasMedicas', citaTarget.id), updateData);
-        await setMessageReactionTelegram(chatId, messageId, '👍');
-
-        let detalleAcomp = '';
-        if (mismo) {
-          detalleAcomp = `• 🚗 <b>Acompaña:</b> <b>${llevaFinal}</b>\n`;
-        } else {
-          detalleAcomp = `• 🚗 <b>Lleva (Ida):</b> <b>${llevaFinal}</b>\n• 🚙 <b>Recoge (Vuelta):</b> <b>${recogeFinal}</b>\n`;
-        }
-
-        await enviarRespuestaTelegram(
-          chatId,
-          `🏥 ✅ ¡Anotado, <b>${autor}</b>!\n\n` +
-          `He actualizado la cita de <b>${citaTarget.paciente}</b> (${citaTarget.especialidad.trim()}) en FamilyApp:\n` +
-          `• 📅 <b>${formatearFechaBonita(citaTarget.fecha)}</b> a las <b>${citaTarget.hora || '10:30'}</b>\n` +
-          (citaTarget.centro ? `• 📍 ${citaTarget.centro}\n` : '') +
-          `${detalleAcomp}\n` +
-          `👉 <a href="https://familiabarnuevoapp.web.app/?tab=citas">Ver cita en FamilyApp</a>`,
-          messageId
-        );
-        return { tipo: 'cita', citaId: citaTarget.id, quienLleva: llevaFinal, quienRecoge: recogeFinal };
+      if (noNecesitaAcompanante || quienLleva || quienRecoge) {
+        citasYaAsignadasIds.add(citaTarget.id);
+        citasActualizadas.push({
+          citaTarget,
+          quienLleva,
+          quienRecoge,
+          noNecesitaAcompanante,
+          subTexto
+        });
       }
+    }
+
+    if (citasActualizadas.length > 0) {
+      let bloquesTextoRespuesta = '';
+
+      for (let i = 0; i < citasActualizadas.length; i++) {
+        const item = citasActualizadas[i];
+        const { citaTarget, quienLleva, quienRecoge, noNecesitaAcompanante, subTexto } = item;
+
+        const updateData = {
+          actualizadoPor: `${autor} (Telegram)`,
+          actualizadoEl: new Date().toISOString()
+        };
+
+        if (noNecesitaAcompanante) {
+          updateData.noNecesitaAcompanante = true;
+          updateData.acompanante = 'No necesita acompañante (por sus propios medios)';
+          updateData.quienLleva = 'No necesita acompañante';
+          updateData.quienRecoge = 'No necesita acompañante';
+          updateData.mismoConductorVuelta = true;
+          updateData.notas = citaTarget.notas ? `${citaTarget.notas} | ${subTexto}` : subTexto;
+
+          await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'citasMedicas', citaTarget.id), updateData);
+
+          bloquesTextoRespuesta += `${citasActualizadas.length > 1 ? `\n<b>${i + 1}️⃣ ${citaTarget.especialidad.trim()}</b> (${citaTarget.hora || ''})\n` : `• <b>${citaTarget.paciente}</b>: Cita de <b>${citaTarget.especialidad.trim()}</b> (${citaTarget.hora || ''})\n`}  🚶 <i>No necesita acompañante</i>\n`;
+        } else {
+          const llevaFinal = quienLleva || citaTarget.quienLleva || 'Pendiente de asignar';
+          const recogeFinal = quienRecoge || citaTarget.quienRecoge || llevaFinal;
+          const mismo = llevaFinal === recogeFinal;
+
+          updateData.quienLleva = llevaFinal;
+          updateData.quienRecoge = recogeFinal;
+          updateData.mismoConductorVuelta = mismo;
+          updateData.noNecesitaAcompanante = false;
+          updateData.acompanante = mismo ? llevaFinal : `${llevaFinal} (ida) / ${recogeFinal} (vuelta)`;
+          updateData.notas = citaTarget.notas ? `${citaTarget.notas} | ${subTexto}` : subTexto;
+
+          await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'citasMedicas', citaTarget.id), updateData);
+
+          if (citasActualizadas.length > 1) {
+            bloquesTextoRespuesta += `\n<b>${i + 1}️⃣ ${citaTarget.especialidad.trim()}</b> a las <b>${citaTarget.hora || 'hora por definir'}</b>\n` +
+              (mismo ? `• 🚗 <b>Acompaña:</b> <b>${llevaFinal}</b>\n` : `• 🚗 <b>Lleva (Ida):</b> <b>${llevaFinal}</b>\n• 🚙 <b>Recoge (Vuelta):</b> <b>${recogeFinal}</b>\n`);
+          } else {
+            bloquesTextoRespuesta += `• <b>${citaTarget.paciente}</b>: Cita de <b>${citaTarget.especialidad.trim()}</b>\n` +
+              `• 📅 <b>${formatearFechaBonita(citaTarget.fecha)}</b> a las <b>${citaTarget.hora || '10:30'}</b>\n` +
+              (citaTarget.centro ? `• 📍 ${citaTarget.centro}\n` : '') +
+              (mismo ? `• 🚗 <b>Acompaña:</b> <b>${llevaFinal}</b>\n` : `• 🚗 <b>Lleva (Ida):</b> <b>${llevaFinal}</b>\n• 🚙 <b>Recoge (Vuelta):</b> <b>${recogeFinal}</b>\n`);
+          }
+        }
+      }
+
+      await setMessageReactionTelegram(chatId, messageId, '👍');
+      await enviarRespuestaTelegram(
+        chatId,
+        `🏥 ✅ ¡Anotado, <b>${autor}</b>!\n\n` +
+        `He actualizado ${citasActualizadas.length > 1 ? 'las citas médicas' : 'la cita médica'} en FamilyApp:\n` +
+        bloquesTextoRespuesta +
+        `\n👉 <a href="https://familiabarnuevoapp.web.app/?tab=citas">Ver citas en FamilyApp</a>`,
+        messageId
+      );
+
+      return { tipo: 'citas_multiples', total: citasActualizadas.length };
     }
   }
 
