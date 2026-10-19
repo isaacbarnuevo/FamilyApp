@@ -375,8 +375,10 @@ export async function runDailyDigest(force = false) {
       const horaTxt = c.hora ? ` a las <b>${c.hora}</b>` : '';
       const tieneDetalle = c.quienLleva && c.quienRecoge && c.quienLleva !== c.quienRecoge;
       let textoLlevaRecoge = '';
-      if (c.noNecesitaAcompanante || c.acompanante === 'No necesita acompañante') {
-        textoLlevaRecoge = `• 🚶 <i>No necesita acompañante (va solo/a)</i>\n`;
+      if (c.noNecesitaAcompanante || (c.acompanante && c.acompanante.toLowerCase().includes('no necesita')) || (c.quienLleva && c.quienLleva.toLowerCase().includes('por su cuenta'))) {
+        const icono = /metro|tren/i.test(c.acompanante || c.quienLleva || '') ? '🚇' : (/autob[uú]s|bus/i.test(c.acompanante || c.quienLleva || '') ? '🚌' : (/taxi/i.test(c.acompanante || c.quienLleva || '') ? '🚖' : '🚶'));
+        const textoMedio = c.acompanante || (c.quienLleva && c.quienLleva.toLowerCase().includes('por su cuenta') ? c.quienLleva : 'No necesita acompañante (va solo/a)');
+        textoLlevaRecoge = `• ${icono} <i>${textoMedio}</i>\n`;
       } else if (tieneDetalle) {
         textoLlevaRecoge = `• 🚗 Lleva (Ida): <b>${c.quienLleva}</b>\n• 🚙 Recoge (Vuelta): <b>${c.quienRecoge}</b>\n`;
       } else {

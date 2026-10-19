@@ -7726,9 +7726,9 @@ export default function App() {
                                   <p className="text-xs text-rose-700 font-bold truncate">🩺 {proxima.especialidad}</p>
                                   <p className="text-[11px] text-slate-500 truncate">📍 {proxima.centro} ({proxima.hora})</p>
                                   <div className="pt-1">
-                                    {proxima.acompanante === 'No necesita acompañante' ? (
-                                      <span className="text-[9px] bg-slate-100 text-slate-700 border border-slate-200 font-bold px-2 py-0.5 rounded-full inline-block truncate max-w-[150px]">
-                                        🚶 No necesita acompañante
+                                    {(proxima.noNecesitaAcompanante || (proxima.acompanante && proxima.acompanante.toLowerCase().includes('no necesita')) || (proxima.quienLleva && proxima.quienLleva.toLowerCase().includes('por su cuenta'))) ? (
+                                      <span className="text-[9px] bg-slate-100 text-slate-700 border border-slate-200 font-bold px-2 py-0.5 rounded-full inline-block truncate max-w-[200px]">
+                                        {/metro|tren/i.test(proxima.acompanante || proxima.quienLleva || '') ? '🚇' : (/autob[uú]s|bus/i.test(proxima.acompanante || proxima.quienLleva || '') ? '🚌' : '🚶')} {proxima.acompanante || 'No necesita acompañante'}
                                       </span>
                                     ) : proxima.acompanante && proxima.acompanante !== 'Pendiente de asignar' ? (
                                       <span className="text-[9px] bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold px-2 py-0.5 rounded-full inline-block truncate max-w-[140px]">
@@ -9711,20 +9711,25 @@ export default function App() {
                                     {(() => {
                                       const lleva = cita.quienLleva || (cita.acompanante && !cita.acompanante.includes('Lleva:') ? cita.acompanante : 'Pendiente de asignar');
                                       const recoge = cita.quienRecoge || (cita.acompanante && !cita.acompanante.includes('Recoge:') ? cita.acompanante : 'Pendiente de asignar');
-                                      const esNoNecesitaTotal = (cita.acompanante === 'No necesita acompañante') || (lleva === 'No necesita acompañante' && recoge === 'No necesita acompañante');
-                                      const esNoNecesitaLleva = lleva === 'No necesita acompañante';
-                                      const esNoNecesitaRecoge = recoge === 'No necesita acompañante';
+                                      const esNoNecesitaTotal = cita.noNecesitaAcompanante ||
+                                        (cita.acompanante && cita.acompanante.toLowerCase().includes('no necesita')) ||
+                                        (lleva && (lleva.toLowerCase().includes('no necesita') || lleva.toLowerCase().includes('por su cuenta'))) ||
+                                        (recoge && (recoge.toLowerCase().includes('no necesita') || recoge.toLowerCase().includes('por su cuenta')));
+                                      const esNoNecesitaLleva = lleva === 'No necesita acompañante' || lleva?.toLowerCase().includes('por su cuenta');
+                                      const esNoNecesitaRecoge = recoge === 'No necesita acompañante' || recoge?.toLowerCase().includes('por su cuenta');
                                       const sinLleva = (!lleva || lleva === 'Pendiente de asignar') && !esNoNecesitaLleva;
                                       const sinRecoge = (!recoge || recoge === 'Pendiente de asignar') && !esNoNecesitaRecoge;
                                       const sonIguales = lleva === recoge && !sinLleva && !esNoNecesitaTotal;
 
                                       if (esNoNecesitaTotal) {
+                                        const textoAcomp = cita.acompanante || (lleva && lleva.includes('cuenta') ? lleva : 'No necesita acompañante (Va solo/a)');
+                                        const iconoAcomp = /metro|tren/i.test(textoAcomp) ? '🚇' : (/autob[uú]s|bus/i.test(textoAcomp) ? '🚌' : (/taxi/i.test(textoAcomp) ? '🚖' : '🚶'));
                                         return (
                                           <div className="flex items-center justify-between gap-2 flex-wrap">
                                             <div className="flex items-center gap-1.5">
-                                              <span className="text-xs">🚶</span>
+                                              <span className="text-xs">{iconoAcomp}</span>
                                               <span className="text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 px-3 py-1 rounded-full flex items-center gap-1.5">
-                                                <span>🚶</span> No necesita acompañante (Va solo/a)
+                                                <span>{iconoAcomp}</span> {textoAcomp}
                                               </span>
                                             </div>
                                             {!esCompletada && (

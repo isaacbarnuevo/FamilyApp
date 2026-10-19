@@ -600,9 +600,9 @@ async function procesarMensajeNaturalGrupo(msg, chatId, texto, messageId) {
     }
   }
 
-  // 4. Detección de Citas Médicas (Acompañamiento, Ida / Vuelta / Por su cuenta / Autobús / Andando)
+  // 4. Detección de Citas Médicas (Acompañamiento, Ida / Vuelta / Por su cuenta / Metro / Autobús / Andando)
   const tienePalabraMedica = /(?:dentista|m[eé]dico|doctor|consulta|hospital|ambulatorio|alcarria|quir[oó]n|endocrino|oculista|oftalm[oó]logo|trauma|an[aá]lisis|vacuna|gripe|pod[oó]logo|juan\s+de\s+austria|inyecci[oó]n|colonoscopia|pruebas|revisi[oó]n|cita)/i.test(t) || /(?:cita\s+m[eé]dica|dentista|consulta|m[eé]dico)/i.test(replyText);
-  const tienePalabraTransporte = /(?:nos\s+lleva|me\s+lleva|le\s+lleva|la\s+lleva|llevo\s+yo|yo\s+llevo|nos\s+trae|me\s+trae|le\s+trae|la\s+trae|traigo\s+yo|yo\s+traigo|yo\s+(?:le\s+|la\s+)?acerco|acompa[ñn]o\s+yo|yo\s+acompa[ñn]o|recojo\s+yo|yo\s+recojo|le\s+recoge|la\s+recoge|me\s+recoge|nos\s+recoge|volveremos|volvere|volver[aá]n|volver[eé]|vuelta|por\s+mis\s+medios|por\s+nuestra\s+cuenta|por\s+su\s+cuenta|autob[uú]s|andando|voy\s+sol[oa]|vamos\s+sol[oa]s|no\s+necesita\s+acompa[ñn]ante|no\s+hace\s+falta\s+que\s+(?:me|nos)\s+(?:llev[eé]is|acompa[ñn][eé]is)|lleva\s+[a-záéíóúñ]+|acompa[ñn]a\s+[a-záéíóúñ]+|recoge\s+[a-záéíóúñ]+|trae\s+[a-záéíóúñ]+)/i.test(t);
+  const tienePalabraTransporte = /(?:nos\s+lleva|me\s+lleva|le\s+lleva|la\s+lleva|llevo\s+yo|yo\s+llevo|nos\s+trae|me\s+trae|le\s+trae|la\s+trae|traigo\s+yo|yo\s+traigo|yo\s+(?:le\s+|la\s+)?acerco|acompa[ñn]o\s+yo|yo\s+acompa[ñn]o|recojo\s+yo|yo\s+recojo|le\s+recoge|la\s+recoge|me\s+recoge|nos\s+recoge|volveremos|volvere|volver[aá]n|volver[eé]|vuelta|por\s+(?:mis|nuestros?|sus?)\s+medios|por\s+(?:mi|nuestra|su)\s+cuenta|metro\b|autob[uú]s|bus\b|tren\b|cercan[ií]as\b|taxi\b|andando|a\s+pie|caminando|voy\s+sol[oa]|vamos\s+sol[oa]s?|van\s+sol[oa]s?|iremos\s+sol[oa]s?|(?:iremos|vamos|ir[eé]|van|va|ir)\s+en\s+(?:metro|autob[uú]s|bus|tren|cercan[ií]as|taxi)|no\s+necesita\s+acompa[ñn]ante|no\s+hace\s+falta\s+que\s+(?:me|nos)\s+(?:llev[eé]is|acompa[ñn][eé]is)|lleva\s+[a-záéíóúñ]+|acompa[ñn]a\s+[a-záéíóúñ]+|recoge\s+[a-záéíóúñ]+|trae\s+[a-záéíóúñ]+)/i.test(t);
 
   const hoyIso = getFechaHoySpain();
   const [hAno, hMes, hDia] = hoyIso.split('-').map(Number);
@@ -616,11 +616,12 @@ async function procesarMensajeNaturalGrupo(msg, chatId, texto, messageId) {
     .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '') || (a.hora || '').localeCompare(b.hora || ''));
 
   const citasHoyPendientes = citasPendientes.some(c => c.fecha === hoyIso);
+  const citasMananaPendientes = citasPendientes.some(c => c.fecha === mananaIso && (!c.quienLleva || c.quienLleva === 'Pendiente de asignar' || c.noNecesitaAcompanante === undefined));
 
   const esMensajeCita = (tienePalabraMedica && tienePalabraTransporte) ||
     (tienePalabraTransporte && replyText.includes('cita')) ||
     (tienePalabraTransporte && /(?:a\s+pap[aá]|a\s+mam[aá])/i.test(t)) ||
-    (tienePalabraTransporte && citasHoyPendientes);
+    (tienePalabraTransporte && (citasHoyPendientes || citasMananaPendientes));
 
   if (esMensajeCita && citasPendientes.length > 0) {
     const snapMiembros = await getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'miembros'));
@@ -689,8 +690,16 @@ async function procesarMensajeNaturalGrupo(msg, chatId, texto, messageId) {
 
       if (!citaTarget) continue;
 
-      const esPorSusMedios = /(?:por\s+(?:mis|nuestros?|sus)\s+medios|por\s+(?:mi|nuestra|su)\s+cuenta|autob[uú]s|andando|voy\s+sol[oa]|vamos\s+sol[oa]s|no\s+necesita\s+acompa[ñn]ante|no\s+hace\s+falta\s+que\s+(?:me|nos)\s+(?:llev[eé]is|acompa[ñn][eé]is))/i.test(subT);
-      const vueltaPorCuenta = /(?:vuelta|regreso|volver[aá]n?|volver[eé])\s+(?:.*?\s+)?(?:por\s+(?:nuestra|su|mi)\s+cuenta|sol[oa]s?|andando|en\s+autob[uú]s)/i.test(subT);
+      const esPorSusMedios = /(?:por\s+(?:mis|nuestros?|sus)\s+medios|por\s+(?:mi|nuestra|su)\s+cuenta|metro\b|autob[uú]s|bus\b|tren\b|cercan[ií]as\b|taxi\b|andando|a\s+pie|caminando|voy\s+sol[oa]|vamos\s+sol[oa]s?|van\s+sol[oa]s?|iremos\s+sol[oa]s?|(?:iremos|vamos|ir[eé]|van|va|ir)\s+en\s+(?:metro|autob[uú]s|bus|tren|cercan[ií]as|taxi)|no\s+necesita\s+acompa[ñn]ante|no\s+hace\s+falta\s+que\s+(?:me|nos)\s+(?:llev[eé]is|acompa[ñn][eé]is))/i.test(subT);
+      const vueltaPorCuenta = /(?:vuelta|regreso|volver[aá]n?|volver[eé])\s+(?:.*?\s+)?(?:por\s+(?:nuestra|su|mi)\s+cuenta|sol[oa]s?|andando|a\s+pie|caminando|en\s+(?:autob[uú]s|bus|metro|tren|cercan[ií]as|taxi))/i.test(subT);
+
+      let medioTransporte = 'por su cuenta';
+      if (/metro/i.test(subT)) medioTransporte = 'en metro';
+      else if (/autob[uú]s|bus/i.test(subT)) medioTransporte = 'en autobús';
+      else if (/tren|cercan[ií]as/i.test(subT)) medioTransporte = 'en tren';
+      else if (/taxi/i.test(subT)) medioTransporte = 'en taxi';
+      else if (/andando|a\s+pie|caminando/i.test(subT)) medioTransporte = 'andando';
+      else if (/sol[oa]s?/i.test(subT)) medioTransporte = 'por su cuenta';
 
       let quienLleva = null;
       let quienRecoge = null;
@@ -795,8 +804,13 @@ async function procesarMensajeNaturalGrupo(msg, chatId, texto, messageId) {
 
       if (esPorSusMedios && !quienLleva) {
         noNecesitaAcompanante = true;
-        quienLleva = 'No necesita acompañante';
-        quienRecoge = 'No necesita acompañante';
+        const textoMedio = medioTransporte.startsWith('en ')
+          ? `En ${medioTransporte.slice(3)} (por su cuenta)`
+          : medioTransporte === 'andando'
+            ? 'Andando (por su cuenta)'
+            : 'Por su cuenta';
+        quienLleva = textoMedio;
+        quienRecoge = textoMedio;
       }
 
       if (noNecesitaAcompanante || quienLleva || quienRecoge) {
@@ -806,6 +820,7 @@ async function procesarMensajeNaturalGrupo(msg, chatId, texto, messageId) {
           quienLleva,
           quienRecoge,
           noNecesitaAcompanante,
+          medioTransporte,
           subTexto
         });
       }
@@ -816,7 +831,7 @@ async function procesarMensajeNaturalGrupo(msg, chatId, texto, messageId) {
 
       for (let i = 0; i < citasActualizadas.length; i++) {
         const item = citasActualizadas[i];
-        const { citaTarget, quienLleva, quienRecoge, noNecesitaAcompanante, subTexto } = item;
+        const { citaTarget, quienLleva, quienRecoge, noNecesitaAcompanante, medioTransporte, subTexto } = item;
 
         const updateData = {
           actualizadoPor: `${autor} (Telegram)`,
@@ -824,16 +839,19 @@ async function procesarMensajeNaturalGrupo(msg, chatId, texto, messageId) {
         };
 
         if (noNecesitaAcompanante) {
+          const textoMedio = medioTransporte || 'por su cuenta';
+          const fraseMedio = textoMedio.startsWith('en ') ? `van ${textoMedio}` : textoMedio;
           updateData.noNecesitaAcompanante = true;
-          updateData.acompanante = 'No necesita acompañante (por sus propios medios)';
-          updateData.quienLleva = 'No necesita acompañante';
-          updateData.quienRecoge = 'No necesita acompañante';
+          updateData.acompanante = `No necesita acompañante (${fraseMedio})`;
+          updateData.quienLleva = quienLleva || (textoMedio.startsWith('en ') ? `En ${textoMedio.slice(3)} (por su cuenta)` : 'Por su cuenta');
+          updateData.quienRecoge = quienRecoge || (textoMedio.startsWith('en ') ? `En ${textoMedio.slice(3)} (por su cuenta)` : 'Por su cuenta');
           updateData.mismoConductorVuelta = true;
           updateData.notas = citaTarget.notas ? `${citaTarget.notas} | ${subTexto}` : subTexto;
 
           await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'citasMedicas', citaTarget.id), updateData);
 
-          bloquesTextoRespuesta += `${citasActualizadas.length > 1 ? `\n<b>${i + 1}️⃣ ${citaTarget.especialidad.trim()}</b> (${citaTarget.hora || ''})\n` : `• <b>${citaTarget.paciente}</b>: Cita de <b>${citaTarget.especialidad.trim()}</b> (${citaTarget.hora || ''})\n`}  🚶 <i>No necesita acompañante</i>\n`;
+          const iconoMedio = /metro|tren/i.test(textoMedio) ? '🚇' : (/autob[uú]s|bus/i.test(textoMedio) ? '🚌' : (/taxi/i.test(textoMedio) ? '🚖' : '🚶'));
+          bloquesTextoRespuesta += `${citasActualizadas.length > 1 ? `\n<b>${i + 1}️⃣ ${citaTarget.especialidad.trim()}</b> (${citaTarget.hora || ''})\n` : `• <b>${citaTarget.paciente}</b>: Cita de <b>${citaTarget.especialidad.trim()}</b> (${citaTarget.hora || ''})\n`}  ${iconoMedio} <i>No necesita acompañante (${fraseMedio})</i>\n`;
         } else {
           const llevaFinal = quienLleva || citaTarget.quienLleva || 'Pendiente de asignar';
           const recogeFinal = quienRecoge || citaTarget.quienRecoge || llevaFinal;
@@ -1036,8 +1054,9 @@ export default async function handler(req, res) {
           const avisoTiempo = diffDias === 0 ? '🚨 <b>¡HOY!</b>' : diffDias === 1 ? '⏳ <b>Mañana</b>' : `En ${diffDias} días`;
 
           let textoAcompanante = '';
-          if (c.noNecesitaAcompanante) {
-            textoAcompanante = `• 🚶 <i>No necesita acompañante</i>`;
+          if (c.noNecesitaAcompanante || (c.acompanante && c.acompanante.toLowerCase().includes('no necesita'))) {
+            const icono = /metro|tren/i.test(c.acompanante || c.quienLleva || '') ? '🚇' : (/autob[uú]s|bus/i.test(c.acompanante || c.quienLleva || '') ? '🚌' : (/taxi/i.test(c.acompanante || c.quienLleva || '') ? '🚖' : '🚶'));
+            textoAcompanante = `• ${icono} <i>${c.acompanante || 'No necesita acompañante'}</i>`;
           } else if (c.quienLleva && c.quienRecoge && c.quienLleva !== c.quienRecoge) {
             textoAcompanante = `• 🚗 Lleva (Ida): <b>${c.quienLleva}</b>\n• 🚙 Recoge (Vuelta): <b>${c.quienRecoge}</b>`;
           } else {
@@ -1294,8 +1313,9 @@ export default async function handler(req, res) {
               const horaTxt = c.hora ? ` a las <b>${c.hora}</b>` : '';
               const tieneDetalle = c.quienLleva && c.quienRecoge && c.quienLleva !== c.quienRecoge;
               let textoLlevaRecoge = '';
-              if (c.noNecesitaAcompanante || c.acompanante === 'No necesita acompañante') {
-                textoLlevaRecoge = `• 🚶 <i>No necesita acompañante</i>\n`;
+              if (c.noNecesitaAcompanante || (c.acompanante && c.acompanante.toLowerCase().includes('no necesita'))) {
+                const icono = /metro|tren/i.test(c.acompanante || c.quienLleva || '') ? '🚇' : (/autob[uú]s|bus/i.test(c.acompanante || c.quienLleva || '') ? '🚌' : (/taxi/i.test(c.acompanante || c.quienLleva || '') ? '🚖' : '🚶'));
+                textoLlevaRecoge = `• ${icono} <i>${c.acompanante || 'No necesita acompañante'}</i>\n`;
               } else if (tieneDetalle) {
                 textoLlevaRecoge = `• 🚗 Lleva (Ida): <b>${c.quienLleva}</b>\n• 🚙 Recoge (Vuelta): <b>${c.quienRecoge}</b>\n`;
               } else {
