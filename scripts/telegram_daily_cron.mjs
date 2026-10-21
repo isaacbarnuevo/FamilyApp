@@ -121,47 +121,91 @@ async function enviarMensajeTelegram(texto, replyMarkup = null) {
 }
 
 export function resolverUbicacionPadres(snapUbicacion, trasladosPadres, hoyIso) {
-  const meta = (snapUbicacion && snapUbicacion.exists()) ? snapUbicacion.data() : {};
-  let ubicacion = meta.ubicacion || 'Alcalá (Esgaravita)';
+  const meta = (snapUbicacion && snapUbicacion.exists && typeof snapUbicacion.data === 'function')
+    ? snapUbicacion.data()
+    : (snapUbicacion || {});
+
+  let ubicacion = meta.ubicacion || 'Madrid';
   const esManual = meta.modo === 'manual' || meta.esManual === true;
   const fechaCambioManual = meta.fechaCambio || meta.fecha || '';
-  const diaCambioManual = fechaCambioManual ? fechaCambioManual.slice(0, 10) : '';
 
-  // Filtrar solo traslados reales (no semillas tras_*) y efectivamente realizados o con conductor asignado cuya fecha ya haya llegado
-  const pasados = (trasladosPadres || [])
+  // Hora actual en España para comparar con las horas programadas de traslados de hoy
+  let ahoraHora = '00:00';
+  try {
+    const parts = new Intl.DateTimeFormat('es-ES', {
+      timeZone: 'Europe/Madrid',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }).formatToParts(new Date());
+    const h = parts.find(p => p.type === 'hour')?.value || '00';
+    const m = parts.find(p => p.type === 'minute')?.value || '00';
+    ahoraHora = `${h.padStart(2, '0')}:${m.padStart(2, '0')}`;
+  } catch (e) {
+    const d = new Date();
+    ahoraHora = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+
+  const normalizarUbi = (nombre) => {
+    if (!nombre) return '';
+    const s = nombre.toLowerCase().trim();
+    if (s.includes('madrid')) return 'Madrid';
+    if (s.includes('alcalá') || s.includes('alcala') || s.includes('esgaravita')) return 'Alcalá (Esgaravita)';
+    return nombre;
+  };
+
+  const trasladosValidos = (trasladosPadres || [])
+    .filter(t => t && t.fecha && (!t.id || typeof t.id !== 'string' || !t.id.startsWith('tras_')));
+
+  // 1. Traslados que YA se han completado (pasados de fecha, marcados 'realizado', o de hoy cuya hora ya pasó)
+  const yaRealizados = trasladosValidos
     .filter(t => {
-      if (!t || !t.fecha) return false;
-      if (typeof t.id === 'string' && t.id.startsWith('tras_')) return false;
       if (t.estado === 'realizado') return t.fecha <= hoyIso;
       const tieneConductor = t.conductor && t.conductor !== 'Pendiente de asignar';
-      return tieneConductor && t.fecha <= hoyIso;
+      if (!tieneConductor) return false;
+      // Traslado de días anteriores
+      if (t.fecha < hoyIso) return true;
+      // Traslado de hoy: SOLO si la hora ya pasó
+      if (t.fecha === hoyIso) {
+        const horaT = (t.hora || '12:00').trim();
+        return horaT <= ahoraHora;
+      }
+      return false;
     })
     .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '') || (b.hora || '').localeCompare(a.hora || ''));
 
-  if (pasados.length > 0) {
-    const ultimo = pasados[0];
-    const fechaHoraTraslado = `${ultimo.fecha}T${ultimo.hora || '12:00'}:00.000Z`;
-    const d = (ultimo.destino || '').toLowerCase();
-    const destNorm = d.includes('madrid')
-      ? 'Madrid'
-      : (d.includes('alcalá') || d.includes('alcala') || d.includes('esgaravita')
-        ? 'Alcalá (Esgaravita)'
-        : ultimo.destino);
+  // 2. Traslado pendiente de hoy (programado para hoy cuya hora aún NO ha llegado)
+  const pendienteHoy = trasladosValidos
+    .filter(t => t.fecha === hoyIso && t.estado !== 'realizado' && (!t.hora || t.hora > ahoraHora))
+    .sort((a, b) => (a.hora || '').localeCompare(b.hora || ''))[0];
 
-    // Si la ubicación se fijó manualmente, respetarla siempre a menos que exista un traslado de un día posterior al cambio manual
-    if (esManual && diaCambioManual) {
-      if (ultimo.fecha < diaCambioManual) {
-        return ubicacion;
-      }
-      if (ultimo.fecha === diaCambioManual && fechaCambioManual >= fechaHoraTraslado) {
-        return ubicacion;
+  // Si la ubicación se fijó MANUALMENTE:
+  // Máxima prioridad. NUNCA sobreescribir por un traslado que aún no ha ocurrido.
+  // Solo la sobreescribe un traslado que YA se haya completado y cuya fecha/hora sea POSTERIOR al cambio manual.
+  if (esManual && ubicacion) {
+    if (yaRealizados.length > 0) {
+      const ult = yaRealizados[0];
+      const fechaHoraUlt = `${ult.fecha}T${ult.hora || '12:00'}:00.000Z`;
+      if (fechaCambioManual && fechaHoraUlt > fechaCambioManual) {
+        return normalizarUbi(ult.destino);
       }
     }
-
-    return destNorm;
+    return normalizarUbi(ubicacion);
   }
 
-  return ubicacion;
+  // Si NO es manual:
+  // Si hay un traslado pendiente para hoy (ej: Madrid -> Alcalá a las 18:00):
+  // Antes de las 18:00, están en el ORIGEN del traslado (Madrid)!
+  if (pendienteHoy && pendienteHoy.origen) {
+    return normalizarUbi(pendienteHoy.origen);
+  }
+
+  // Si ya se ha realizado algún traslado efectivo, están en su destino
+  if (yaRealizados.length > 0) {
+    return normalizarUbi(yaRealizados[0].destino);
+  }
+
+  return normalizarUbi(ubicacion);
 }
 
 export function deduplicarCumpleanos(lista, integrantes = []) {
