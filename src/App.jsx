@@ -2299,7 +2299,12 @@ export default function App() {
       if (ultimoPasado && ultimoPasado.destino) {
         const d = (ultimoPasado.destino || '').toLowerCase();
         const destNorm = d.includes('madrid') ? 'Madrid' : (d.includes('alcalá') || d.includes('alcala') || d.includes('esgaravita') ? 'Alcalá (Esgaravita)' : ultimoPasado.destino);
-        const fechaHoraTraslado = `${ultimoPasado.fecha}T${ultimoPasado.hora || '12:00'}:00.000Z`;
+        let fechaHoraTraslado = '';
+        try {
+          fechaHoraTraslado = new Date(`${ultimoPasado.fecha}T${(ultimoPasado.hora || '12:00').trim()}:00`).toISOString();
+        } catch {
+          fechaHoraTraslado = `${ultimoPasado.fecha}T${ultimoPasado.hora || '12:00'}:00.000Z`;
+        }
 
         // Leer primero el documento real de Firestore para jamás pisar un cambio manual hecho desde otro móvil o desde Telegram
         let metaCheck = metaUbicacionPadres;
@@ -5901,7 +5906,12 @@ export default function App() {
     if (esManual && metaUbicacionPadres?.ubicacion) {
       if (trasladosPasados.length > 0) {
         const ultimo = trasladosPasados[0];
-        const fechaHoraTraslado = `${ultimo.fecha}T${ultimo.hora || '12:00'}:00.000Z`;
+        let fechaHoraTraslado = '';
+        try {
+          fechaHoraTraslado = new Date(`${ultimo.fecha}T${(ultimo.hora || '12:00').trim()}:00`).toISOString();
+        } catch {
+          fechaHoraTraslado = `${ultimo.fecha}T${ultimo.hora || '12:00'}:00.000Z`;
+        }
         // Solo sobreescribe si el traslado YA se realizó y su fecha/hora es POSTERIOR al cambio manual
         if (fechaCambioManual && fechaHoraTraslado > fechaCambioManual) {
           const d = (ultimo.destino || '').toLowerCase();

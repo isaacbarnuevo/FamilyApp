@@ -185,7 +185,12 @@ export function resolverUbicacionPadres(snapUbicacion, trasladosPadres, hoyIso) 
   if (esManual && ubicacion) {
     if (yaRealizados.length > 0) {
       const ult = yaRealizados[0];
-      const fechaHoraUlt = `${ult.fecha}T${ult.hora || '12:00'}:00.000Z`;
+      let fechaHoraUlt = '';
+      try {
+        fechaHoraUlt = new Date(`${ult.fecha}T${(ult.hora || '12:00').trim()}:00`).toISOString();
+      } catch {
+        fechaHoraUlt = `${ult.fecha}T${ult.hora || '12:00'}:00.000Z`;
+      }
       if (fechaCambioManual && fechaHoraUlt > fechaCambioManual) {
         return normalizarUbi(ult.destino);
       }
