@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
-import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, setDoc, addDoc } from 'firebase/firestore';
 import { runDailyDigest, resolverUbicacionPadres, deduplicarCumpleanos, matchesSaintDate, esMiembroActivoValido } from '../scripts/telegram_daily_cron.mjs';
 
 const firebaseConfig = {
@@ -51,6 +51,119 @@ function formatearFechaBonita(fechaStr) {
     // fallback
   }
   return fechaStr;
+}
+
+const MESES_MAP = {
+  enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6,
+  julio: 7, agosto: 8, septiembre: 9, octubre: 10, noviembre: 11, diciembre: 12
+};
+
+function extraerFechaDeTexto(texto, hoyIso) {
+  if (!texto) return null;
+  const hoyRef = hoyIso || getFechaHoySpain();
+  const [hAno, hMes, hDia] = hoyRef.split('-').map(Number);
+
+  // 1. "18 de noviembre" o "18 noviembre"
+  const mMes = texto.match(/(\d{1,2})\s*(?:de\s+)?(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/i);
+  if (mMes) {
+    const dia = parseInt(mMes[1], 10);
+    const mes = MESES_MAP[mMes[2].toLowerCase()];
+    let ano = hAno;
+    if (mes < hMes || (mes === hMes && dia < hDia)) {
+      ano = hAno + 1;
+    }
+    return `${ano}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+  }
+
+  // 2. "18/11" o "18/11/2026" o "18-11"
+  const mNum = texto.match(/(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/);
+  if (mNum) {
+    const dia = parseInt(mNum[1], 10);
+    const mes = parseInt(mNum[2], 10);
+    let ano = mNum[3] ? parseInt(mNum[3].length === 2 ? ('20' + mNum[3]) : mNum[3], 10) : hAno;
+    if (mes >= 1 && mes <= 12 && dia >= 1 && dia <= 31) {
+      return `${ano}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+    }
+  }
+
+  // 3. "hoy", "mañana", "pasado mañana"
+  if (/\bhoy\b/i.test(texto)) return hoyRef;
+  if (/\bpasado\s+mañana\b/i.test(texto)) {
+    const d = new Date(hAno, hMes - 1, hDia + 2);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  if (/\bmañana\b/i.test(texto) && !/\b(?:esta|por\s+la)\s+mañana\b/i.test(texto)) {
+    const d = new Date(hAno, hMes - 1, hDia + 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  return null;
+}
+
+function extraerHoraDeTexto(texto) {
+  if (!texto) return null;
+  // 1. "11:30h", "11:30", "11.30"
+  const mMin = texto.match(/(?:a\s+las\s+)?(\d{1,2})[:\.](\d{2})\s*(?:h|horas)?/i);
+  if (mMin) {
+    const h = parseInt(mMin[1], 10);
+    const m = parseInt(mMin[2], 10);
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+  }
+  // 2. "a las 11h", "a las 11", "11h"
+  const mHora = texto.match(/(?:a\s+las?\s+(\d{1,2})\s*(?:h|horas)?\b)|(?:\b(\d{1,2})\s*(?:h|horas)\b)/i);
+  if (mHora) {
+    const h = parseInt(mHora[1] || mHora[2], 10);
+    if (h >= 0 && h <= 23) {
+      return `${String(h).padStart(2, '0')}:00`;
+    }
+  }
+  return null;
+}
+
+function detectarPacienteCita(texto, defaultPaciente = 'Papá (Jaime)') {
+  if (/(?:pap[aá]|jaime)/i.test(texto)) return 'Papá (Jaime)';
+  if (/(?:mam[aá]|encarnaci[oó]n)/i.test(texto)) return 'Mamá (Encarnación)';
+  return defaultPaciente;
+}
+
+function detectarCentroYCiudadCita(texto, centroActual = '') {
+  const t = (texto || '').toLowerCase();
+  if (/la\s+alcarria/i.test(t)) return { centro: 'C.S. La Alcarria (Alcalá)', ciudad: 'alcala' };
+  if (/juan\s+de\s+austria/i.test(t)) return { centro: 'C.S. Juan de Austria (Alcalá)', ciudad: 'alcala' };
+  if (/pr[ií]ncipe\s+de\s+asturias/i.test(t)) return { centro: 'Hospital Príncipe de Asturias (Alcalá)', ciudad: 'alcala' };
+  if (/la\s+paz/i.test(t)) return { centro: 'Hospital Universitario La Paz (Madrid)', ciudad: 'madrid' };
+  if (/jim[eé]nez\s+d[ií]az|fjd/i.test(t)) return { centro: 'Fundación Jiménez Díaz (Madrid)', ciudad: 'madrid' };
+  if (/sanitas|moraleja/i.test(t)) return { centro: 'Hospital Sanitas La Moraleja', ciudad: 'madrid' };
+  if (/quir[oó]n/i.test(t)) return { centro: 'Hospital Quirón (Madrid)', ciudad: 'madrid' };
+  if (/ram[oó]n\s+y\s+cajal/i.test(t)) return { centro: 'Hospital Ramón y Cajal (Madrid)', ciudad: 'madrid' };
+
+  if (/alcal[aá]/i.test(t)) {
+    return { centro: centroActual || 'C.S. La Alcarria (Alcalá)', ciudad: 'alcala' };
+  }
+  if (/madrid/i.test(t)) {
+    return { centro: centroActual || 'Madrid', ciudad: 'madrid' };
+  }
+  return { centro: centroActual || '', ciudad: centroActual.toLowerCase().includes('alcal') ? 'alcala' : 'madrid' };
+}
+
+function detectarEspecialidadCita(texto, espActual = '') {
+  const t = (texto || '').toLowerCase();
+  if (/dentista|odont[oó]log/i.test(t)) return 'Dentista';
+  if (/colonoscopia/i.test(t)) return 'Colonoscopia';
+  if (/cardio|arritmia/i.test(t)) return 'Cardiología';
+  if (/endocrin/i.test(t)) return 'Endocrinología';
+  if (/oculista|oftalm[oó]log/i.test(t)) return 'Oftalmología';
+  if (/trauma/i.test(t)) return 'Traumatología';
+  if (/inyecci[oó]n/i.test(t)) return 'Inyección';
+  if (/vacuna/i.test(t)) return 'Vacuna';
+  if (/an[aá]lisis/i.test(t)) return 'Análisis de sangre';
+  if (/pod[oó]log/i.test(t)) return 'Podología';
+  if (/ur[oó]log/i.test(t)) return 'Urología';
+  if (/dermat[oó]log/i.test(t)) return 'Dermatología';
+  if (/m[eé]dic|doctor|consulta|revisi[oó]n/i.test(t)) return espActual || 'Consulta Médica';
+  return espActual || 'Consulta Médica';
 }
 
 async function guardarUbicacionManualFirestore(nuevaUbicacion, autorNombre = 'Telegram') {
@@ -597,6 +710,165 @@ async function procesarMensajeNaturalGrupo(msg, chatId, texto, messageId) {
         messageId
       );
       return { tipo: 'traslado', trasladoId: trasladoTarget.id, conductor: autor };
+    }
+  }
+
+  // 3.5 Detección de Cambios / Reprogramación o Creación de Citas Médicas
+  const tienePalabraMedicaGeneral = /(?:dentista|odont[oó]log|m[eé]dico|doctor|consulta|hospital|ambulatorio|alcarria|quir[oó]n|endocrin|oculista|oftalm[oó]log|trauma|an[aá]lisis|vacuna|gripe|pod[oó]log|juan\s+de\s+austria|inyecci[oó]n|colonoscopia|pruebas|revisi[oó]n|cardio|arritmia|cita)/i.test(t) || /(?:cita\s+m[eé]dica|dentista|consulta|m[eé]dico)/i.test(replyText);
+
+  const esCambioCita = /(?:hay\s*cambio|ha\s+cambiado|cambio\s+(?:de|en)|se\s+cambia|se\s+ha\s+cambiado|se\s+pasa|pasa\s+al|se\s+traslada|reprogramad[oa]|cambiada|se\s+adelanta|se\s+retrasa|nueva\s+fecha|nueva\s+hora)/i.test(t) ||
+    (/(?:ser[aá]\s+el|ahora\s+es\s+el|pasa\s+al)\s+\d{1,2}/i.test(t) && tienePalabraMedicaGeneral);
+
+  const esNuevaCita = /(?:nueva\s+cita|tenemos\s+cita|le\s+han\s+dado\s+cita|han\s+dado\s+cita|apuntad\s+cita|anotad\s+cita|apuntar\s+cita|cita\s+m[eé]dica\s+el)/i.test(t);
+
+  const esCancelacionCita = /(?:se\s+cancela|cancelada|se\s+anula|anulada|borrar\s+cita|eliminar\s+cita|ya\s+no\s+hay\s+cita)/i.test(t);
+
+  const fechaExtraidaCita = extraerFechaDeTexto(texto, getFechaHoySpain());
+
+  if ((esCambioCita || esNuevaCita || esCancelacionCita) && tienePalabraMedicaGeneral) {
+    const snapMiembros = await getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'miembros'));
+    const integrantes = snapMiembros.docs.map(d => ({ ...d.data(), id: d.id }));
+    const autor = obtenerAutorFamiliar(msg.from, integrantes);
+
+    const snapCitasTodas = await getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'citasMedicas'));
+    const citasTodas = snapCitasTodas.docs
+      .map(d => ({ ...d.data(), id: d.id }))
+      .filter(c => c.estado !== 'completada' && c.estado !== 'cancelada')
+      .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '') || (a.hora || '').localeCompare(b.hora || ''));
+
+    // 1. Manejo de cancelación de cita
+    if (esCancelacionCita && citasTodas.length > 0) {
+      let citaTargetCancel = null;
+      let mejorScoreCancel = -1;
+      for (const c of citasTodas) {
+        let score = 0;
+        const esp = (c.especialidad || '').toLowerCase().trim();
+        const pac = (c.paciente || '').toLowerCase().trim();
+        if (esp && (t.includes(esp) || replyText.includes(esp))) score += 20;
+        if (pac.includes('papá') && /(?:pap[aá]|jaime)/i.test(t)) score += 10;
+        if (pac.includes('mamá') && /(?:mam[aá]|encarnaci[oó]n)/i.test(t)) score += 10;
+        if (score > mejorScoreCancel) {
+          mejorScoreCancel = score;
+          citaTargetCancel = c;
+        }
+      }
+
+      if (citaTargetCancel && mejorScoreCancel > 0) {
+        await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'citasMedicas', citaTargetCancel.id), {
+          estado: 'cancelada',
+          actualizadoPor: `${autor} (Telegram)`,
+          actualizadoEl: new Date().toISOString()
+        });
+
+        await setMessageReactionTelegram(chatId, messageId, '🗑️');
+        await enviarRespuestaTelegram(
+          chatId,
+          `🩺 🗑️ ¡Anotado, <b>${autor}</b>!\n\n` +
+          `He marcado como cancelada la cita de <b>${citaTargetCancel.especialidad.trim()}</b> de <b>${citaTargetCancel.paciente}</b> (${formatearFechaBonita(citaTargetCancel.fecha)} a las ${citaTargetCancel.hora || 'hora no fijada'}).\n\n` +
+          `👉 <a href="https://familiabarnuevoapp.web.app/?tab=citas">Ver citas en FamilyApp</a>`,
+          messageId
+        );
+        return { tipo: 'cita_cancelada', citaId: citaTargetCancel.id };
+      }
+    }
+
+    // 2. Manejo de cambio / reprogramación de cita existente
+    if (esCambioCita && citasTodas.length > 0) {
+      let citaTargetCambio = null;
+      let mejorScoreCambio = -1;
+
+      for (const c of citasTodas) {
+        let score = 0;
+        const esp = (c.especialidad || '').toLowerCase().trim();
+        const pac = (c.paciente || '').toLowerCase().trim();
+        if (esp && (t.includes(esp) || replyText.includes(esp))) score += 20;
+        if (pac.includes('papá') && /(?:pap[aá]|jaime)/i.test(t)) score += 10;
+        if (pac.includes('mamá') && /(?:mam[aá]|encarnaci[oó]n)/i.test(t)) score += 10;
+        if (score > mejorScoreCambio) {
+          mejorScoreCambio = score;
+          citaTargetCambio = c;
+        }
+      }
+
+      if (!citaTargetCambio && citasTodas.length === 1) {
+        citaTargetCambio = citasTodas[0];
+      }
+
+      const horaExtraida = extraerHoraDeTexto(texto);
+
+      if (citaTargetCambio && (fechaExtraidaCita || horaExtraida)) {
+        const nuevaHora = horaExtraida || citaTargetCambio.hora || '10:00';
+        const nuevaFecha = fechaExtraidaCita || citaTargetCambio.fecha;
+        const lugarInfo = detectarCentroYCiudadCita(texto, citaTargetCambio.centro);
+
+        const updateData = {
+          fecha: nuevaFecha,
+          hora: nuevaHora,
+          actualizadoPor: `${autor} (Telegram)`,
+          actualizadoEl: new Date().toISOString()
+        };
+        if (lugarInfo.centro) updateData.centro = lugarInfo.centro;
+        if (lugarInfo.ciudad) updateData.ciudad = lugarInfo.ciudad;
+
+        await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'citasMedicas', citaTargetCambio.id), updateData);
+
+        await setMessageReactionTelegram(chatId, messageId, '🗓️');
+        await enviarRespuestaTelegram(
+          chatId,
+          `🩺 🗓️ ¡Anotado el cambio de cita, <b>${autor}</b>!\n\n` +
+          `He actualizado la cita en FamilyApp:\n` +
+          `• <b>${citaTargetCambio.paciente}</b>: Cita de <b>${citaTargetCambio.especialidad.trim()}</b>\n` +
+          `• 📅 <b>${formatearFechaBonita(nuevaFecha)}</b> a las <b>${nuevaHora}</b>\n` +
+          `• 📍 ${lugarInfo.centro || citaTargetCambio.centro || 'Centro médico'}\n` +
+          `• 🚗 Acompañante: <b>${citaTargetCambio.acompanante || 'Pendiente de asignar'}</b>\n\n` +
+          `👉 <a href="https://familiabarnuevoapp.web.app/?tab=citas">Ver citas en FamilyApp</a>`,
+          messageId
+        );
+        return { tipo: 'cita_reprogramada', citaId: citaTargetCambio.id };
+      }
+    }
+
+    // 3. Manejo de nueva cita médica
+    if ((esNuevaCita || (fechaExtraidaCita && !esCambioCita)) && fechaExtraidaCita) {
+      const pac = detectarPacienteCita(texto);
+      const esp = detectarEspecialidadCita(texto);
+      const hora = extraerHoraDeTexto(texto) || '10:00';
+      const lugar = detectarCentroYCiudadCita(texto);
+
+      const nuevaCita = {
+        paciente: pac,
+        especialidad: esp,
+        fecha: fechaExtraidaCita,
+        hora: hora,
+        centro: lugar.centro || (lugar.ciudad === 'alcala' ? 'C.S. La Alcarria (Alcalá)' : 'Madrid'),
+        ciudad: lugar.ciudad,
+        medico: '',
+        ubicacionUrl: '',
+        acompanante: 'Pendiente de asignar',
+        quienLleva: 'Pendiente de asignar',
+        quienRecoge: 'Pendiente de asignar',
+        mismoConductorVuelta: true,
+        notas: '',
+        estado: 'pendiente',
+        creadoEl: new Date().toISOString(),
+        actualizadoPor: `${autor} (Telegram)`
+      };
+
+      const refDoc = await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'citasMedicas'), nuevaCita);
+
+      await setMessageReactionTelegram(chatId, messageId, '🩺');
+      await enviarRespuestaTelegram(
+        chatId,
+        `🩺 ✨ ¡Anotada nueva cita médica, <b>${autor}</b>!\n\n` +
+        `He guardado la cita en FamilyApp:\n` +
+        `• <b>${nuevaCita.paciente}</b>: Cita de <b>${nuevaCita.especialidad}</b>\n` +
+        `• 📅 <b>${formatearFechaBonita(nuevaCita.fecha)}</b> a las <b>${nuevaCita.hora}</b>\n` +
+        `• 📍 ${nuevaCita.centro}\n` +
+        `• 🚗 Acompañante: <b>Pendiente de asignar</b>\n\n` +
+        `👉 <a href="https://familiabarnuevoapp.web.app/?tab=citas">Ver citas en FamilyApp</a>`,
+        messageId
+      );
+      return { tipo: 'cita_creada', citaId: refDoc.id };
     }
   }
 
