@@ -577,6 +577,64 @@ const exportFamilyCalendarIcs = (cumples = [], eventos = []) => {
   URL.revokeObjectURL(url);
 };
 
+const exportCitasMedicasIcs = (citas = []) => {
+  const nowStamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+  const icsContent = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Familia Barnuevo//Citas Medicas Padres//ES',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'X-WR-CALNAME:Citas Médicas Padres (Familia Barnuevo)',
+    'X-WR-TIMEZONE:Europe/Madrid'
+  ];
+
+  citas.forEach((cita, idx) => {
+    if (!cita.fecha) return;
+    const cleanFecha = cita.fecha.replace(/-/g, '');
+    let horaStr = cita.hora || '10:00';
+    if (!horaStr.includes(':')) horaStr = '10:00';
+    const [h, m] = horaStr.split(':');
+    const startH = h.padStart(2, '0');
+    const startM = m.padStart(2, '0');
+    const endH = String((parseInt(startH, 10) + 1) % 24).padStart(2, '0');
+
+    const pacCorto = (cita.paciente || 'Papá').includes('Mamá') ? 'Mamá' : 'Papá';
+    const title = `🩺 Cita ${pacCorto}: ${cita.especialidad || 'Médico'}`;
+    const descParts = [
+      `Paciente: ${cita.paciente || 'Padres'}`,
+      `Especialidad: ${cita.especialidad || 'Consulta'}`,
+      cita.medico ? `Doctor/a: ${cita.medico}` : null,
+      cita.centro ? `Centro: ${cita.centro}` : null,
+      cita.acompanante ? `Acompañante: ${cita.acompanante}` : null,
+      cita.notas ? `Notas: ${cita.notas}` : null,
+      'Sincronizado desde FamilyApp 🏠'
+    ].filter(Boolean).join('\\n');
+
+    icsContent.push('BEGIN:VEVENT');
+    icsContent.push(`UID:cita-${cita.id || idx}@familiabarnuevo.web.app`);
+    icsContent.push(`DTSTAMP:${nowStamp}`);
+    icsContent.push(`DTSTART:${cleanFecha}T${startH}${startM}00`);
+    icsContent.push(`DTEND:${cleanFecha}T${endH}${startM}00`);
+    icsContent.push(`SUMMARY:${title}`);
+    if (cita.centro) icsContent.push(`LOCATION:${cita.centro}`);
+    icsContent.push(`DESCRIPTION:${descParts}`);
+    icsContent.push('END:VEVENT');
+  });
+
+  icsContent.push('END:VCALENDAR');
+
+  const blob = new Blob([icsContent.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'citas-medicas-padres.ics';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
 // --- INTEGRACIÓN BOT DE TELEGRAM ---
 const TELEGRAM_BOT_TOKEN = '8563679097:AAFit3k4k38GYIeFCJCAsdT9vVz2ylToi6E';
 const TELEGRAM_CHAT_ID = '-1004328933116';
@@ -1229,6 +1287,10 @@ export default function App() {
     participantes: ['Isaac (Isik)', 'Rebeca', 'María', 'Bartek', 'Javier', 'Carlos', 'Sofía', 'Juan']
   });
   const [subTabSalud, setSubTabSalud] = useState('citas');
+  const [modoVistaCitas, setModoVistaCitas] = useState('lista'); // 'lista' o 'calendario'
+  const [mesCalendarioCitas, setMesCalendarioCitas] = useState(() => new Date(2026, 10, 1)); // Noviembre 2026 por defecto (o mes actual)
+  const [citaSeleccionadaModal, setCitaSeleccionadaModal] = useState(null);
+  const [showSyncCalendarModal, setShowSyncCalendarModal] = useState(false);
   const [filtroPacienteMedicacion, setFiltroPacienteMedicacion] = useState('todos');
   const [filtroPacienteHistorial, setFiltroPacienteHistorial] = useState('todos');
   const [busquedaHistorial, setBusquedaHistorial] = useState('');
@@ -6266,6 +6328,63 @@ export default function App() {
     setCurrentCalendarDate(new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() + 1, 1));
   };
 
+  const handleCitasCalendarPrevMonth = () => {
+    setMesCalendarioCitas(new Date(mesCalendarioCitas.getFullYear(), mesCalendarioCitas.getMonth() - 1, 1));
+  };
+
+  const handleCitasCalendarNextMonth = () => {
+    setMesCalendarioCitas(new Date(mesCalendarioCitas.getFullYear(), mesCalendarioCitas.getMonth() + 1, 1));
+  };
+
+  const calendarDaysCitas = useMemo(() => {
+    const year = mesCalendarioCitas.getFullYear();
+    const month = mesCalendarioCitas.getMonth();
+    
+    const primerDiaSemana = new Date(year, month, 1).getDay();
+    const offset = primerDiaSemana === 0 ? 6 : primerDiaSemana - 1;
+
+    const diasTotalesMes = new Date(year, month + 1, 0).getDate();
+    const diasTotalesMesAnterior = new Date(year, month, 0).getDate();
+
+    const result = [];
+
+    for (let i = offset - 1; i >= 0; i--) {
+      const d = new Date(year, month - 1, diasTotalesMesAnterior - i);
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      result.push({
+        day: diasTotalesMesAnterior - i,
+        isCurrentMonth: false,
+        date: d,
+        iso
+      });
+    }
+
+    for (let i = 1; i <= diasTotalesMes; i++) {
+      const d = new Date(year, month, i);
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      result.push({
+        day: i,
+        isCurrentMonth: true,
+        date: d,
+        iso
+      });
+    }
+
+    const remaining = 42 - result.length;
+    for (let i = 1; i <= remaining; i++) {
+      const d = new Date(year, month + 1, i);
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      result.push({
+        day: i,
+        isCurrentMonth: false,
+        date: d,
+        iso
+      });
+    }
+
+    return result;
+  }, [mesCalendarioCitas]);
+
   const calendarDays = useMemo(() => {
     const year = currentCalendarDate.getFullYear();
     const month = currentCalendarDate.getMonth();
@@ -9436,6 +9555,13 @@ export default function App() {
                       <div className="flex items-center gap-2 flex-wrap">
                         {subTabSalud === 'citas' && (
                           <>
+                            <button
+                              onClick={() => setShowSyncCalendarModal(true)}
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl flex items-center gap-1.5 transition-all shadow-md"
+                              title="Sincronizar todas las citas médicas con Google Calendar"
+                            >
+                              <CalendarIcon className="w-4 h-4" /> <span>Google Calendar</span>
+                            </button>
                             <label className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-bold text-xs py-2.5 px-3.5 rounded-xl flex items-center gap-1.5 transition-all shadow-md cursor-pointer shrink-0">
                               <Camera className="w-4 h-4" /> <span>📷 Añadir por Foto</span>
                               <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFotoCitaSeleccionada} />
@@ -9540,9 +9666,34 @@ export default function App() {
                     {subTabSalud === 'citas' && (
                       <div className="space-y-6">
 
-                    {/* Barra de Filtros y Estadísticas */}
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-2xl border border-slate-150 shadow-xs">
-                      <div className="flex flex-wrap gap-1.5">
+                    {/* Barra de Filtros, Selector de Vista (Lista / Calendario) y Estadísticas */}
+                    <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 bg-white p-4 rounded-2xl border border-slate-150 shadow-xs">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* Selector de Modo de Vista */}
+                        <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 mr-2">
+                          <button
+                            onClick={() => setModoVistaCitas('lista')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all ${
+                              modoVistaCitas === 'lista'
+                                ? 'bg-white text-slate-800 shadow-xs'
+                                : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                          >
+                            <ClipboardList className="w-3.5 h-3.5" /> Lista
+                          </button>
+                          <button
+                            onClick={() => setModoVistaCitas('calendario')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all ${
+                              modoVistaCitas === 'calendario'
+                                ? 'bg-indigo-600 text-white shadow-xs'
+                                : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                          >
+                            <CalendarIcon className="w-3.5 h-3.5" /> Calendario Google
+                          </button>
+                        </div>
+
+                        {/* Filtros de Paciente y Estado */}
                         {[
                           { id: 'todas', label: 'Todas' },
                           { id: 'madrid', label: '🔵 Madrid' },
@@ -9567,12 +9718,21 @@ export default function App() {
                         ))}
                       </div>
 
-                      <div className="text-xs text-slate-400 font-medium">
-                        {citasMedicas.filter(c => c.estado !== 'completada').length} pendientes • {citasMedicas.filter(c => c.estado === 'completada').length} realizadas
+                      <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-end">
+                        <button
+                          onClick={() => exportCitasMedicasIcs(citasMedicas)}
+                          className="text-xs font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-xl transition flex items-center gap-1.5"
+                          title="Descargar archivo .ics con todas las citas médicas para abrirlo en Google Calendar o iPhone"
+                        >
+                          <Download className="w-3.5 h-3.5" /> Exportar .ics
+                        </button>
+                        <div className="text-xs text-slate-400 font-medium">
+                          {citasMedicas.filter(c => c.estado !== 'completada').length} pendientes • {citasMedicas.filter(c => c.estado === 'completada').length} realizadas
+                        </div>
                       </div>
                     </div>
 
-                    {/* Listado de Citas */}
+                    {/* Contenido de Citas: Vista Lista o Vista Calendario */}
                     {(() => {
                       const citasFiltradas = citasMedicas.filter(c => {
                         if (filtroPacienteCita === 'madrid') {
@@ -9606,6 +9766,168 @@ export default function App() {
                         return (a.hora || '').localeCompare(b.hora || '');
                       });
 
+                      // VISTA 1: CALENDARIO GOOGLE
+                      if (modoVistaCitas === 'calendario') {
+                        return (
+                          <div className="space-y-4 animate-fadeIn">
+                            {/* Cabecera del mes del calendario */}
+                            <div className="bg-white p-5 rounded-3xl border border-slate-150 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                              <div className="flex items-center gap-3">
+                                <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
+                                  <CalendarIcon className="w-6 h-6" />
+                                </div>
+                                <div>
+                                  <h3 className="text-lg font-black text-slate-800">
+                                    Calendario Médico Mensual
+                                  </h3>
+                                  <p className="text-xs text-slate-500">
+                                    Vista estilo Google Calendar con citas, horas, acompañantes y centros
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => setMesCalendarioCitas(new Date())}
+                                  className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 shadow-xs transition"
+                                >
+                                  Hoy
+                                </button>
+                                <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                                  <button
+                                    onClick={handleCitasCalendarPrevMonth}
+                                    className="p-1.5 bg-white rounded-lg shadow-xs text-slate-700 hover:bg-slate-50 transition"
+                                    title="Mes anterior"
+                                  >
+                                    <ChevronLeft className="w-4 h-4" />
+                                  </button>
+                                  <span className="text-xs font-black text-slate-800 px-3 uppercase tracking-wider min-w-[140px] text-center">
+                                    {obtenerNombreMes(mesCalendarioCitas.getMonth() + 1)} {mesCalendarioCitas.getFullYear()}
+                                  </span>
+                                  <button
+                                    onClick={handleCitasCalendarNextMonth}
+                                    className="p-1.5 bg-white rounded-lg shadow-xs text-slate-700 hover:bg-slate-50 transition"
+                                    title="Mes siguiente"
+                                  >
+                                    <ChevronRight className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Leyenda rápida */}
+                            <div className="bg-white px-5 py-3 rounded-2xl border border-slate-150 shadow-xs flex flex-wrap gap-4 text-xs text-slate-600 items-center justify-between">
+                              <div className="flex items-center gap-3 flex-wrap">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="w-3 h-3 rounded-md bg-purple-500 inline-block"></span>
+                                  <span className="font-bold text-purple-900">Mamá (Encarnación)</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="w-3 h-3 rounded-md bg-blue-500 inline-block"></span>
+                                  <span className="font-bold text-blue-900">Papá (Jaime)</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span>
+                                  <span className="text-slate-500">⚠️ Sin acompañante</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span>
+                                  <span className="text-slate-500">🚗 Con acompañante</span>
+                                </div>
+                              </div>
+                              <span className="text-[11px] text-slate-400">💡 Toca cualquier cita para ver detalles o añadirla a tu Google Calendar</span>
+                            </div>
+
+                            {/* Cuadrícula Mensual */}
+                            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                              <div className="grid grid-cols-7 bg-slate-50 border-b border-slate-200 text-center py-2.5">
+                                {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(dayName => (
+                                  <span key={dayName} className="text-xs font-black text-slate-500 uppercase tracking-wider">{dayName}</span>
+                                ))}
+                              </div>
+
+                              <div className="grid grid-cols-7 border-b border-slate-200">
+                                {calendarDaysCitas.map((cell, idx) => {
+                                  const citasDelDia = citasFiltradas.filter(c => c.fecha === cell.iso);
+                                  const isToday = new Date().toISOString().slice(0, 10) === cell.iso;
+
+                                  let cellBg = cell.isCurrentMonth ? 'bg-white' : 'bg-slate-50/60 text-slate-400';
+                                  if (citasDelDia.length > 0 && cell.isCurrentMonth) {
+                                    cellBg = 'bg-indigo-50/20';
+                                  }
+
+                                  return (
+                                    <div
+                                      key={idx}
+                                      className={`min-h-[110px] md:min-h-[130px] border-r border-b border-slate-150 p-1.5 flex flex-col justify-between relative hover:bg-slate-50/80 transition-colors ${cellBg}`}
+                                    >
+                                      {/* Cabecera del día */}
+                                      <div className="flex justify-between items-center mb-1">
+                                        <span className={`text-[11px] font-black rounded-full w-5 h-5 flex items-center justify-center ${
+                                          isToday
+                                            ? 'bg-rose-600 text-white shadow-xs font-extrabold ring-2 ring-rose-200'
+                                            : cell.isCurrentMonth
+                                              ? 'text-slate-800'
+                                              : 'text-slate-400'
+                                        }`}>
+                                          {cell.day}
+                                        </span>
+                                        {citasDelDia.length > 0 && (
+                                          <span className="text-[10px] font-black bg-indigo-100 text-indigo-700 px-1.5 py-0.2 rounded-full">
+                                            {citasDelDia.length} {citasDelDia.length === 1 ? 'cita' : 'citas'}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* Citas del día tipo etiqueta Google Calendar */}
+                                      <div className="space-y-1 overflow-y-auto max-h-[95px] scrollbar-none flex-1">
+                                        {citasDelDia.map(cita => {
+                                          const esMama = (cita.paciente || '').toLowerCase().includes('mamá') || (cita.paciente || '').toLowerCase().includes('encarnación');
+                                          const sinAcomp = (!cita.quienLleva || cita.quienLleva === 'Pendiente de asignar') && (!cita.acompanante || cita.acompanante === 'Pendiente de asignar') && !cita.noNecesitaAcompanante;
+                                          const esHecha = cita.estado === 'completada';
+
+                                          return (
+                                            <div
+                                              key={cita.id}
+                                              onClick={() => setCitaSeleccionadaModal(cita)}
+                                              className={`p-1.5 rounded-lg border text-left cursor-pointer transition-all hover:scale-[1.02] shadow-3xs ${
+                                                esHecha
+                                                  ? 'bg-slate-100 text-slate-500 border-slate-200 line-through'
+                                                  : esMama
+                                                    ? 'bg-purple-50 hover:bg-purple-100 text-purple-950 border-purple-200'
+                                                    : 'bg-blue-50 hover:bg-blue-100 text-blue-950 border-blue-200'
+                                              }`}
+                                              title="Haz clic para ver detalles y opciones de la cita"
+                                            >
+                                              <div className="flex items-center justify-between gap-1 leading-tight">
+                                                <span className="font-extrabold text-[10.5px] truncate">
+                                                  {cita.hora || '10:00'} • {cita.especialidad}
+                                                </span>
+                                                <span className={`w-2 h-2 rounded-full shrink-0 ${sinAcomp ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'}`} />
+                                              </div>
+                                              <div className="text-[9px] text-slate-500 truncate mt-0.5 flex items-center gap-1">
+                                                <span>{esMama ? '👵' : '👴'}</span>
+                                                <span>{cita.centro ? cita.centro.split('(')[0] : 'Consulta'}</span>
+                                              </div>
+                                              {cita.acompanante && cita.acompanante !== 'Pendiente de asignar' && (
+                                                <div className="text-[8.5px] font-bold text-slate-600 truncate mt-0.5">
+                                                  🚗 {cita.acompanante.split(' ')[0]}
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // VISTA 2: LISTADO DE CITAS (MODO ORIGINAL)
                       if (citasFiltradas.length === 0) {
                         return (
                           <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-3">
@@ -14699,6 +15021,212 @@ export default function App() {
                     Continuar como invitado sin vincular ahora
                   </button>
                 </form>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Detalle de Cita (al pulsar desde la Vista Calendario Google) */}
+          {citaSeleccionadaModal && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-fadeIn">
+              <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-100">
+                <div className="flex justify-between items-start pb-2 border-b border-slate-100">
+                  <div className="flex items-center gap-2.5">
+                    <div className={`p-2.5 rounded-2xl ${
+                      (citaSeleccionadaModal.paciente || '').toLowerCase().includes('mamá') || (citaSeleccionadaModal.paciente || '').toLowerCase().includes('encarnación')
+                        ? 'bg-purple-100 text-purple-700'
+                        : 'bg-blue-100 text-blue-700'
+                    }`}>
+                      <Activity className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                        (citaSeleccionadaModal.paciente || '').toLowerCase().includes('mamá') || (citaSeleccionadaModal.paciente || '').toLowerCase().includes('encarnación')
+                          ? 'bg-purple-100 text-purple-900'
+                          : 'bg-blue-100 text-blue-900'
+                      }`}>
+                        {citaSeleccionadaModal.paciente}
+                      </span>
+                      <h3 className="font-black text-slate-800 text-base mt-1">
+                        {citaSeleccionadaModal.especialidad}
+                      </h3>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setCitaSeleccionadaModal(null)}
+                    className="text-slate-400 hover:text-slate-600 font-bold p-1 text-base transition"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="space-y-2.5 text-xs text-slate-700">
+                  <div className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                    <CalendarIcon className="w-4 h-4 text-indigo-600 shrink-0" />
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-bold block">FECHA Y HORA</span>
+                      <span className="font-black text-slate-800">
+                        {formatearFechaStr(citaSeleccionadaModal.fecha)} a las {citaSeleccionadaModal.hora || '10:00'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                    <MapPin className="w-4 h-4 text-rose-600 shrink-0" />
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-bold block">CENTRO Y CIUDAD</span>
+                      <span className="font-bold text-slate-800">
+                        {citaSeleccionadaModal.centro || 'Centro no especificado'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {citaSeleccionadaModal.medico && (
+                    <div className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                      <span className="text-base shrink-0">👨‍⚕️</span>
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold block">ESPECIALISTA / DOCTOR/A</span>
+                        <span className="font-bold text-slate-800">{citaSeleccionadaModal.medico}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                    <span className="text-[10px] text-slate-400 font-bold block mb-1">ACOMPAÑAMIENTO Y TRANSPORTE</span>
+                    {citaSeleccionadaModal.noNecesitaAcompanante ? (
+                      <span className="text-xs font-bold text-slate-600">🚶 No necesita acompañante (acude por su cuenta)</span>
+                    ) : (
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-500">Lleva (Ida):</span>
+                          <span className="font-black text-indigo-800">
+                            {citaSeleccionadaModal.quienLleva && citaSeleccionadaModal.quienLleva !== 'Pendiente de asignar'
+                              ? citaSeleccionadaModal.quienLleva
+                              : '⚠️ Pendiente de asignar'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-500">Recoge (Vuelta):</span>
+                          <span className="font-black text-indigo-800">
+                            {citaSeleccionadaModal.quienRecoge && citaSeleccionadaModal.quienRecoge !== 'Pendiente de asignar'
+                              ? citaSeleccionadaModal.quienRecoge
+                              : '⚠️ Pendiente de asignar'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {citaSeleccionadaModal.notas && (
+                    <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-200 text-amber-900">
+                      <span className="text-[10px] font-bold uppercase tracking-wider block mb-0.5">Indicaciones / Notas:</span>
+                      <p className="text-xs italic">{citaSeleccionadaModal.notas}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 flex flex-col gap-2">
+                  <a
+                    href={generateGoogleCalendarUrlForCita(citaSeleccionadaModal)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2.5 rounded-xl transition flex items-center justify-center gap-2 shadow-sm"
+                  >
+                    <CalendarIcon className="w-4 h-4" /> Añadir a mi Google Calendar
+                  </a>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        const c = citaSeleccionadaModal;
+                        setCitaSeleccionadaModal(null);
+                        startEditCita(c);
+                      }}
+                      className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-2 rounded-xl transition flex items-center justify-center gap-1.5"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" /> Editar
+                    </button>
+                    <button
+                      onClick={() => {
+                        const c = citaSeleccionadaModal;
+                        handleToggleEstadoCita(c);
+                        setCitaSeleccionadaModal(null);
+                      }}
+                      className={`flex-1 font-bold text-xs py-2 rounded-xl transition flex items-center justify-center gap-1.5 ${
+                        citaSeleccionadaModal.estado === 'completada'
+                          ? 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
+                      }`}
+                    >
+                      <Check className="w-3.5 h-3.5" /> {citaSeleccionadaModal.estado === 'completada' ? 'Reabrir' : 'Marcar Hecha'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal de Sincronización Google Calendar */}
+          {showSyncCalendarModal && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-fadeIn">
+              <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-100 text-xs">
+                <div className="flex justify-between items-start pb-2 border-b border-slate-100">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2.5 bg-blue-100 text-blue-700 rounded-2xl">
+                      <CalendarIcon className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-black text-slate-800 text-base">
+                        Sincronizar con Google Calendar
+                      </h3>
+                      <p className="text-[11px] text-slate-500">
+                        Ten todas las citas de Papá y Mamá en el calendario de tu móvil
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowSyncCalendarModal(false)}
+                    className="text-slate-400 hover:text-slate-600 font-bold p-1 text-base transition"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="space-y-3 text-slate-600">
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 p-3.5 rounded-2xl">
+                    <span className="font-bold text-blue-950 block text-xs mb-1">📅 Opción Rápida: Descargar e Importar (.ics)</span>
+                    <p className="text-[11px] text-blue-900 mb-2.5 leading-relaxed">
+                      Descarga el archivo con todas las citas médicas y ábrelo con la aplicación de Google Calendar, iPhone Calendar o Outlook para guardarlas al instante en tu agenda.
+                    </p>
+                    <button
+                      onClick={() => {
+                        exportCitasMedicasIcs(citasMedicas);
+                        triggerToast('📥 Descargando archivo .ics de citas médicas');
+                      }}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-3.5 rounded-xl shadow-xs transition flex items-center gap-2"
+                    >
+                      <Download className="w-4 h-4" /> Descargar archivo .ics de Citas
+                    </button>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-2xl space-y-2">
+                    <span className="font-bold text-slate-800 block text-xs">📲 ¿Cómo añadir el calendario a tu Gmail / Google Calendar?</span>
+                    <ol className="list-decimal list-inside space-y-1.5 text-[11px] text-slate-600 leading-relaxed">
+                      <li>Descarga el archivo <strong>.ics</strong> pulsando el botón de arriba.</li>
+                      <li>Entra en <strong>calendar.google.com</strong> desde el ordenador o navegador de tu móvil.</li>
+                      <li>Haz clic en el engranaje de <strong>Ajustes ⚙️ ➔ Importar y exportar</strong>.</li>
+                      <li>Selecciona el archivo descargado y asígnalo a tu calendario personal.</li>
+                      <li>¡Listo! Te aparecerán automáticamente con alertas y recordatorios previos a cada consulta.</li>
+                    </ol>
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-2 border-t border-slate-100">
+                  <button
+                    onClick={() => setShowSyncCalendarModal(false)}
+                    className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2 px-4 rounded-xl transition"
+                  >
+                    Entendido
+                  </button>
+                </div>
               </div>
             </div>
           )}
