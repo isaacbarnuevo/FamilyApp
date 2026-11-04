@@ -1046,7 +1046,7 @@ async function procesarMensajeNaturalGrupo(msg, chatId, texto, messageId) {
       familiares.sort((a, b) => a.pos - b.pos);
 
       // Ver si hay mención explícita a recogida o traer de vuelta
-      const posRecoge = subT.search(/\b(?:recog|trae|traer|vuelta|regreso)\b/);
+      const posRecoge = subT.search(/(?:recog[a-záéíóúñ]*|trae[a-záéíóúñ]*|traer\b|vuelta\b|regreso\b)/i);
       if (posRecoge !== -1 && familiares.length > 0) {
         const antesRecoge = familiares.filter(f => f.pos < posRecoge);
         const despuesRecoge = familiares.filter(f => f.pos >= posRecoge);
