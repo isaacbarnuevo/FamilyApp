@@ -1,4 +1,4 @@
-const CACHE_NAME = 'familyapp-v3';
+const CACHE_NAME = 'familyapp-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

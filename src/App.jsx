@@ -2317,8 +2317,8 @@ export default function App() {
 
   const ejecutarLimpiezaPasados = async (citasActuales = citasMedicas, trasladosActuales = trasladosPadres, manual = false) => {
     const hoyIso = getFechaHoyLocal(new Date());
-    const citasPasadas = (citasActuales || []).filter(c => c.fecha && c.fecha < hoyIso);
-    const trasladosPasados = (trasladosActuales || []).filter(t => t.fecha && t.fecha < hoyIso);
+    const citasPasadas = (citasActuales || []).filter(c => c.fecha && c.fecha < hoyIso && c.estado === 'completada');
+    const trasladosPasados = (trasladosActuales || []).filter(t => t.fecha && t.fecha < hoyIso && t.estado === 'realizado');
 
     if (citasPasadas.length === 0 && trasladosPasados.length === 0) {
       if (manual) triggerToast('✨ Todo al día: no hay citas ni traslados pasados pendientes.');
